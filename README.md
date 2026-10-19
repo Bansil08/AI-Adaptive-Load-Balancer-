@@ -2,7 +2,7 @@
 
 An HTTP load balancer built on raw sockets and threads in Python. It routes traffic across backends of different speeds using round robin, least connections and two ML-based strategies, performs health checks and failover, logs every request to PostgreSQL, and includes an experiment harness that compares the strategies under different traffic scenarios.
 
-> **Status:** Phase 0 (project skeleton). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
+> **Status:** Phase 1 (basic proxy with round robin). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
 
 ## Prerequisites
 
@@ -36,6 +36,27 @@ pytest
 ```
 
 To stop the database: `docker compose down` (data is kept in the `pgdata` volume; `docker compose down -v` deletes it).
+
+## Run the load balancer (Phase 1)
+
+Each command in its own terminal (with the venv activated):
+
+```bash
+python -m backend.app --port 9001 --name fast   --delay-ms 10
+python -m backend.app --port 9002 --name medium --delay-ms 50
+python -m backend.app --port 9003 --name slow   --delay-ms 200
+
+python -m lb.server --port 8080 \
+    --backend 127.0.0.1:9001 --backend 127.0.0.1:9002 --backend 127.0.0.1:9003
+```
+
+Then send requests; round robin rotates fast → medium → slow:
+
+```bash
+curl -i http://127.0.0.1:8080/hello
+```
+
+Stop a backend and the LB answers `502 Bad Gateway` when round robin picks it (health checks that skip dead backends arrive in Phase 3). Press Ctrl+C to stop the LB.
 
 ## Repository layout
 
