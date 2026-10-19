@@ -21,14 +21,23 @@ CRLF = b"\r\n"
 HEAD_END = b"\r\n\r\n"
 RECV_SIZE = 64 * 1024
 
+# All patterns below are used with fullmatch(), never match() with "^...$":
+# "$" also matches just before a trailing "\n", so r"^[0-9]+$" would accept "5\n".
+
 # RFC 9110 "token": the characters allowed in a header name.
-_TOKEN_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+_TOKEN_RE = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 # Methods are case-sensitive tokens. We accept upper-case ones (matches the DB CHECK).
-_METHOD_RE = re.compile(r"^[A-Z]{1,16}$")
+_METHOD_RE = re.compile(r"[A-Z]{1,16}")
 # Not str.isdigit(): that also accepts characters like '²'.
-_DIGITS_RE = re.compile(r"^[0-9]+$")
-_VERSION_RE = re.compile(r"^HTTP/[0-9]\.[0-9]$")
-_STATUS_RE = re.compile(r"^[1-5][0-9]{2}$")
+_DIGITS_RE = re.compile(r"[0-9]+")
+_VERSION_RE = re.compile(r"HTTP/[0-9]\.[0-9]")
+_STATUS_RE = re.compile(r"[1-5][0-9]{2}")
+# Request target: "/" then visible ASCII only. Anything else (spaces, raw UTF-8,
+# control bytes) must be percent-encoded by the client. This also keeps escape
+# codes out of our logs and NUL bytes (which Postgres rejects) out of the DB.
+_TARGET_RE = re.compile(r"/[\x21-\x7e]*")
+# Control characters are illegal in header values; only TAB is allowed (RFC 9110 5.5).
+_VALUE_CTL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
 SUPPORTED_VERSIONS = ("HTTP/1.0", "HTTP/1.1")
 
 
@@ -128,11 +137,11 @@ def _parse_header_lines(lines: list[bytes], error_status: int) -> Headers:
         name, sep, value = _decode(raw).partition(":")
         if not sep:
             raise ParseError(error_status, "header line without a colon")
-        if not _TOKEN_RE.match(name):
+        if not _TOKEN_RE.fullmatch(name):
             # Also rejects "Host : x": whitespace before the colon is a smuggling trick.
             raise ParseError(error_status, f"invalid header name {name!r}")
         value = value.strip(" \t")
-        if any(ch in value for ch in "\r\n\0"):
+        if _VALUE_CTL_RE.search(value):
             raise ParseError(error_status, f"control character in header {name!r}")
         headers.add(name, value)
     return headers
@@ -146,13 +155,13 @@ def parse_request_head(head: bytes) -> HTTPRequest:
         raise ParseError(400, "malformed request line")
     method, target, version = parts
 
-    if not _METHOD_RE.match(method):
+    if not _METHOD_RE.fullmatch(method):
         raise ParseError(400, f"invalid method {method!r}")
-    if not target.startswith("/"):
+    if not _TARGET_RE.fullmatch(target):
         # A reverse proxy only needs "origin-form" targets like /path?query.
-        raise ParseError(400, "request target must start with '/'")
+        raise ParseError(400, "request target must be '/' followed by visible ASCII")
     if version not in SUPPORTED_VERSIONS:
-        if _VERSION_RE.match(version):
+        if _VERSION_RE.fullmatch(version):
             raise ParseError(505, f"unsupported HTTP version {version}")
         raise ParseError(400, f"malformed HTTP version {version!r}")
 
@@ -167,7 +176,7 @@ def parse_response_head(head: bytes) -> HTTPResponse:
     lines = head.split(CRLF)
     # The reason phrase may contain spaces or be empty: "HTTP/1.1 404 Not Found".
     parts = _decode(lines[0]).split(" ", 2)
-    if len(parts) < 2 or parts[0] not in SUPPORTED_VERSIONS or not _STATUS_RE.match(parts[1]):
+    if len(parts) < 2 or parts[0] not in SUPPORTED_VERSIONS or not _STATUS_RE.fullmatch(parts[1]):
         raise ParseError(502, "malformed status line from backend")
     reason = parts[2] if len(parts) == 3 else ""
     headers = _parse_header_lines(lines[1:], error_status=502)
@@ -182,7 +191,7 @@ def content_length(headers: Headers, error_status: int = 400) -> int | None:
     if len(set(values)) != 1:
         # Two different lengths = two different ideas of where the body ends.
         raise ParseError(error_status, "conflicting Content-Length headers")
-    if not _DIGITS_RE.match(values[0]):
+    if not _DIGITS_RE.fullmatch(values[0]):
         raise ParseError(error_status, f"invalid Content-Length {values[0]!r}")
     return int(values[0])
 

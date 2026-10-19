@@ -34,6 +34,13 @@ def test_header_value_whitespace_is_trimmed_and_duplicates_kept():
     assert req.headers.get_all("x-a") == ["1", "2"]
 
 
+def test_tab_and_obs_text_allowed_in_header_values():
+    req = parse_request_head(b"GET /%C3%A9?q=1 HTTP/1.1\r\nHost: x\r\nX: a\tb\r\nY: caf\xe9")
+    assert req.headers.get("x") == "a\tb"
+    assert req.headers.get("y") == "caf\xe9"  # round-trips via latin-1
+    assert req.target == "/%C3%A9?q=1"
+
+
 def test_http_1_0_does_not_require_host():
     req = parse_request_head(b"GET / HTTP/1.0")
     assert req.version == "HTTP/1.0"
@@ -55,6 +62,15 @@ def test_http_1_0_does_not_require_host():
         (b"GET / HTTP/1.1\r\nHost: x\r\nNoColon", 400),
         (b"GET / HTTP/1.1\r\nHost: x\r\nX: a\nb", 400),   # bare LF inside a value
         (b"", 400),
+        # Regressions: "$" in a regex also matches before a trailing "\n".
+        (b"GET\n /x HTTP/1.1\r\nHost: x", 400),          # bare LF after method
+        (b"GET / HTTP/1.1\r\nHost: x\r\nX\n: v", 400),   # bare LF in header name
+        # Regressions: control / non-ASCII bytes in the target or header values.
+        (b"GET /\x1b[31mFAKE HTTP/1.1\r\nHost: x", 400),  # ANSI escape (log injection)
+        (b"GET /a\x00b HTTP/1.1\r\nHost: x", 400),        # NUL (Postgres rejects it)
+        (b"GET /caf\xc3\xa9 HTTP/1.1\r\nHost: x", 400),   # raw UTF-8, must be %-encoded
+        (b"GET / HTTP/1.1\r\nHost: x\r\nX: a\x1bb", 400),  # ESC in header value
+        (b"GET / HTTP/1.1\r\nHost: x\r\nX: a\x7fb", 400),  # DEL in header value
     ],
 )
 def test_rejects_malformed_requests(head, status):
@@ -73,7 +89,7 @@ def test_content_length_values():
     assert content_length(Headers([("Content-Length", "5"), ("content-length", "5")])) == 5
 
 
-@pytest.mark.parametrize("values", [["5", "6"], ["-1"], ["abc"], ["²"], [" "], ["1e3"]])
+@pytest.mark.parametrize("values", [["5", "6"], ["-1"], ["abc"], ["²"], [" "], ["1e3"], ["5\n"]])
 def test_content_length_rejects_bad_values(values):
     with pytest.raises(ParseError) as exc:
         content_length(Headers([("Content-Length", v) for v in values]))
