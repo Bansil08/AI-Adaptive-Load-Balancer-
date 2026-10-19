@@ -1,0 +1,21 @@
+# Load balancer configuration, read by `python -m lb.server` (override with --config).
+
+# Routing strategy. Phase 1: "round_robin".
+strategy = "round_robin"
+
+# Backend servers as "host:port". These match the three backends that
+# `docker compose up -d` starts (fast 20 ms, medium 60 ms, slow 150 ms).
+backends = [
+    "127.0.0.1:9001",
+    "127.0.0.1:9002",
+    "127.0.0.1:9003",
+]
+
+[listen]
+host = "127.0.0.1"
+port = 8080
+
+[timeouts]  # seconds
+client = 10.0          # max wait for the client to send its request
+backend_connect = 2.0  # TCP handshake with a backend (refused -> 502, too slow -> 504)
+backend_read = 30.0    # waiting for the backend's response; too slow -> 504

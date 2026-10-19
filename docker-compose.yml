@@ -1,4 +1,44 @@
+# Shared settings for the three test backends (YAML anchor, merged with <<: below).
+# backend/app.py only uses the standard library, so the stock Python image plus
+# the code mounted read-only is enough; no Dockerfile needed.
+x-backend: &backend
+  image: python:3.11-slim
+  working_dir: /app
+  volumes:
+    - ./backend:/app/backend:ro
+  environment:
+    PYTHONUNBUFFERED: "1"  # show print() output in `docker compose logs` immediately
+  # A tiny init process as PID 1 forwards SIGTERM to Python, so `docker compose
+  # stop` is instant. (PID 1 ignores signals it has no handler for, so without
+  # this Docker waits 10 s and then sends SIGKILL.)
+  init: true
+  restart: unless-stopped
+
 services:
+  # Three backends with different artificial delays. They listen on 0.0.0.0
+  # inside their containers (127.0.0.1 there would be unreachable from outside)
+  # and are published only on this machine's loopback, where lb.toml points.
+  backend-fast:
+    <<: *backend
+    container_name: adaptive-lb-backend-fast
+    command: python -m backend.app --host 0.0.0.0 --port 9001 --name fast --delay-ms 20
+    ports:
+      - "127.0.0.1:9001:9001"
+
+  backend-medium:
+    <<: *backend
+    container_name: adaptive-lb-backend-medium
+    command: python -m backend.app --host 0.0.0.0 --port 9002 --name medium --delay-ms 60
+    ports:
+      - "127.0.0.1:9002:9002"
+
+  backend-slow:
+    <<: *backend
+    container_name: adaptive-lb-backend-slow
+    command: python -m backend.app --host 0.0.0.0 --port 9003 --name slow --delay-ms 150
+    ports:
+      - "127.0.0.1:9003:9003"
+
   postgres:
     image: postgres:16
     container_name: adaptive-lb-postgres
