@@ -27,7 +27,9 @@ docker compose ps          # STATUS should say "(healthy)"
 # with a locally installed Postgres on the default 5432.
 
 # 4. Create the tables
-python scripts/init_db.py  # add --reset to drop and recreate them
+python scripts/init_db.py  # creates missing tables; safe to re-run
+# After editing schema.sql, use --reset (drops all data): IF NOT EXISTS
+# never alters a table that already exists.
 
 # 5. Run the tests
 pytest
