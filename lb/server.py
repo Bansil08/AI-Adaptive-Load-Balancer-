@@ -11,6 +11,7 @@ import argparse
 import logging
 import socket
 import threading
+import time
 
 from lb import config
 from lb.proxy import handle_client
@@ -21,6 +22,8 @@ log = logging.getLogger(__name__)
 
 # How often the accept loop wakes up to check whether it should stop.
 ACCEPT_POLL_SECONDS = 0.5
+# Pause after a failed accept() so we don't spin at 100% CPU while out of file descriptors.
+ACCEPT_ERROR_BACKOFF_SECONDS = 0.1
 
 
 class LoadBalancer:
@@ -54,14 +57,29 @@ class LoadBalancer:
                     client_sock, client_addr = self._sock.accept()
                 except TimeoutError:
                     continue
+                except OSError as exc:
+                    # e.g. EMFILE "Too many open files" during a connection flood.
+                    # Uncaught, this would crash the whole LB and drop every
+                    # in-flight request. Instead only this one client suffers
+                    # (macOS resets its connection; Linux leaves it queued), and
+                    # we back off briefly so fds can free up before retrying.
+                    log.error("accept() failed: %s; backing off", exc)
+                    time.sleep(ACCEPT_ERROR_BACKOFF_SECONDS)
+                    continue
                 # One thread per connection. daemon=True so they don't keep the
                 # process alive on exit; Phase 2 replaces this with a draining shutdown.
-                threading.Thread(
-                    target=handle_client,
-                    args=(client_sock, client_addr, self.router),
-                    name=f"conn-{client_addr[0]}:{client_addr[1]}",
-                    daemon=True,
-                ).start()
+                try:
+                    threading.Thread(
+                        target=handle_client,
+                        args=(client_sock, client_addr, self.router),
+                        name=f"conn-{client_addr[0]}:{client_addr[1]}",
+                        daemon=True,
+                    ).start()
+                except RuntimeError as exc:
+                    # "can't start new thread": the OS refused another thread.
+                    # Drop this one connection rather than the whole server.
+                    log.error("cannot start handler thread: %s; dropping connection", exc)
+                    client_sock.close()
         finally:
             self._sock.close()
 

@@ -1,5 +1,6 @@
 """End-to-end tests: real backends + real load balancer over localhost TCP."""
 
+import errno
 import http.client
 import json
 import socket
@@ -10,6 +11,7 @@ import pytest
 from backend.app import BackendServer
 from lb import config
 from lb.router import Router
+from lb import server as server_module
 from lb.server import LoadBalancer
 from lb.strategies.base import Backend
 from lb.strategies.round_robin import RoundRobinStrategy
@@ -120,7 +122,11 @@ def test_unsupported_version_gets_505(cluster):
 def test_expect_100_continue(cluster):
     with socket.create_connection(("127.0.0.1", cluster), timeout=5) as s:
         s.sendall(b"POST / HTTP/1.1\r\nHost: x\r\nExpect: 100-continue\r\nContent-Length: 4\r\n\r\n")
-        assert s.recv(1024) == b"HTTP/1.1 100 Continue\r\n\r\n"
+        # Read until the blank line rather than trusting one recv(): TCP may split it.
+        interim = b""
+        while not interim.endswith(b"\r\n\r\n"):
+            interim += s.recv(1)
+        assert interim == b"HTTP/1.1 100 Continue\r\n\r\n"
         s.sendall(b"data")
         reply = b""
         while chunk := s.recv(4096):
@@ -173,3 +179,56 @@ def test_concurrent_requests_all_succeed(cluster):
     for t in threads:
         t.join()
     assert results == [200] * 30
+
+
+class FailFirstAccept:
+    """Wraps the listening socket so the first accept() fails like EMFILE would."""
+
+    def __init__(self, sock):
+        self._sock = sock
+        self.failed = False
+
+    def accept(self):
+        if not self.failed:
+            self.failed = True
+            raise OSError(errno.EMFILE, "Too many open files")
+        return self._sock.accept()
+
+    def close(self):
+        self._sock.close()
+
+
+def test_accept_error_does_not_crash_the_lb():
+    """Regression: an uncaught EMFILE from accept() used to kill the whole process."""
+    backend = start_backend("a")
+    lb = LoadBalancer(Router([as_backend(backend)], RoundRobinStrategy()), "127.0.0.1", 0)
+    _, port = lb.start()
+    flaky = lb._sock = FailFirstAccept(lb._sock)
+    threading.Thread(target=lb.serve_forever, daemon=True).start()
+    try:
+        # The fake failure doesn't consume our connection, so it is accepted on the retry.
+        assert request(port)[0] == 200
+        assert flaky.failed
+    finally:
+        lb.shutdown()
+        backend.shutdown()
+        backend.server_close()
+
+
+def test_thread_start_failure_drops_one_connection_not_the_lb(cluster, monkeypatch):
+    """Regression: "can't start new thread" must cost one connection, not the server."""
+
+    class FailOnceThread(threading.Thread):
+        failures_left = 1
+
+        def start(self):
+            if FailOnceThread.failures_left:
+                FailOnceThread.failures_left -= 1
+                raise RuntimeError("can't start new thread")
+            super().start()
+
+    monkeypatch.setattr(server_module.threading, "Thread", FailOnceThread)
+    with pytest.raises(ConnectionError):  # this client's connection is closed on it
+        request(cluster)
+    monkeypatch.undo()
+    assert request(cluster)[0] == 200  # the LB is still serving

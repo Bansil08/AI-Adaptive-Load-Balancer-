@@ -50,7 +50,7 @@ def test_router_without_backends_raises():
         Router([], RoundRobinStrategy()).choose()
 
 
-@pytest.mark.parametrize("text", ["localhost", ":80", "host:", "host:abc", "host:٣"])
+@pytest.mark.parametrize("text", ["localhost", ":80", "host:", "host:abc", "host:٣", "host:0", "host:70000", "[]:80"])
 def test_backend_parse_rejects_bad_input(text):
     with pytest.raises(ValueError):
         Backend.parse(text)
@@ -58,3 +58,9 @@ def test_backend_parse_rejects_bad_input(text):
 
 def test_backend_parse():
     assert Backend.parse(" 10.0.0.1:9001 ") == Backend("10.0.0.1", 9001)
+
+
+def test_backend_parse_ipv6_strips_brackets():
+    backend = Backend.parse("[::1]:9001")
+    assert backend == Backend("::1", 9001)
+    assert str(backend) == "[::1]:9001"

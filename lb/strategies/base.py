@@ -14,14 +14,20 @@ class Backend:
 
     @classmethod
     def parse(cls, text: str) -> "Backend":
-        """Parse 'host:port', e.g. '127.0.0.1:9001'."""
+        """Parse 'host:port', e.g. '127.0.0.1:9001' or '[::1]:9001' for IPv6."""
         host, sep, port = text.strip().rpartition(":")
+        # IPv6 addresses contain ':' themselves, so they are written in brackets.
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
         if not sep or not host or not port.isascii() or not port.isdigit():
             raise ValueError(f"expected host:port, got {text!r}")
+        if not 1 <= int(port) <= 65535:
+            raise ValueError(f"port out of range in {text!r}")
         return cls(host, int(port))
 
     def __str__(self) -> str:
-        return f"{self.host}:{self.port}"
+        host = f"[{self.host}]" if ":" in self.host else self.host
+        return f"{host}:{self.port}"
 
 
 class LoadBalancingStrategy(ABC):
