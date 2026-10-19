@@ -1,0 +1,18 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# ML artefacts and experiment outputs (regenerated, not source)
+ml/models/
+experiments/results/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
