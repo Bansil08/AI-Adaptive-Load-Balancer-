@@ -61,9 +61,10 @@ CREATE TABLE IF NOT EXISTS requests (
     -- so those requests still count towards the error rate.
     server_id         INTEGER     REFERENCES servers (id) ON DELETE RESTRICT,
     received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    method            TEXT        NOT NULL
-                                  CHECK (method IN ('GET', 'HEAD', 'POST', 'PUT', 'DELETE',
-                                                    'PATCH', 'OPTIONS')),
+    -- Any HTTP method token, not a fixed list: the LB must be able to log every
+    -- request it receives (even ones it rejects with 405/501), and one row failing
+    -- a CHECK would abort the DB writer's whole batched transaction.
+    method            TEXT        NOT NULL CHECK (method ~ '^[A-Z]{1,16}$'),
     path              TEXT        NOT NULL,
     status_code       SMALLINT    NOT NULL CHECK (status_code BETWEEN 100 AND 599),
     response_time_ms  DOUBLE PRECISION NOT NULL CHECK (response_time_ms >= 0),

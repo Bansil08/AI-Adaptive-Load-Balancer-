@@ -56,3 +56,18 @@ def test_check_constraint_rejects_bad_check_type(conn):
         )
     # Undo the test server row so the smoke test leaves the database untouched.
     conn.rollback()
+
+
+@pytest.mark.db
+def test_requests_accepts_any_method_token_but_rejects_garbage(conn):
+    """Unusual methods must still be loggable, so one odd row can't abort a batch."""
+    conn.execute(
+        "INSERT INTO requests (method, path, status_code, response_time_ms) "
+        "VALUES ('TRACE', '/', 405, 0.1)"
+    )
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO requests (method, path, status_code, response_time_ms) "
+            "VALUES ('get /x', '/', 400, 0.1)"
+        )
+    conn.rollback()
