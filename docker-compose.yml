@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: adaptive-lb-postgres
+    # Credentials come from .env so no secrets live in this file.
+    env_file: .env
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      # Named volume: data survives `docker compose down` (use `down -v` to wipe).
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready only reports "accepting connections"; it is what
+      # `depends_on: condition: service_healthy` will wait on in later phases.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
