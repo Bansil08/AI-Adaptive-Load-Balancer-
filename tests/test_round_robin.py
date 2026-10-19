@@ -5,25 +5,27 @@ from collections import Counter
 
 import pytest
 
+from lb.http_parser import Headers, HTTPRequest
 from lb.router import NoBackendAvailable, Router
 from lb.strategies.base import Backend
 from lb.strategies.round_robin import RoundRobinStrategy
 
 BACKENDS = [Backend("127.0.0.1", 9001), Backend("127.0.0.1", 9002), Backend("127.0.0.1", 9003)]
+REQUEST = HTTPRequest("GET", "/", "HTTP/1.1", Headers([("Host", "x")]))
 
 
 def test_cycles_through_backends_in_order():
     rr = RoundRobinStrategy()
-    picks = [rr.choose(BACKENDS).port for _ in range(7)]
+    picks = [rr.choose(BACKENDS, REQUEST).port for _ in range(7)]
     assert picks == [9001, 9002, 9003, 9001, 9002, 9003, 9001]
 
 
 def test_handles_backend_list_shrinking():
     rr = RoundRobinStrategy()
-    rr.choose(BACKENDS)
-    rr.choose(BACKENDS)
+    rr.choose(BACKENDS, REQUEST)
+    rr.choose(BACKENDS, REQUEST)
     # The counter is taken modulo the current length, so it never indexes out of range.
-    assert rr.choose(BACKENDS[:1]).port == 9001
+    assert rr.choose(BACKENDS[:1], REQUEST).port == 9001
 
 
 def test_concurrent_choices_are_perfectly_balanced():
@@ -33,7 +35,7 @@ def test_concurrent_choices_are_perfectly_balanced():
     counts_lock = threading.Lock()
 
     def worker():
-        local = Counter(rr.choose(BACKENDS).port for _ in range(3000))
+        local = Counter(rr.choose(BACKENDS, REQUEST).port for _ in range(3000))
         with counts_lock:
             counts.update(local)
 
@@ -47,7 +49,7 @@ def test_concurrent_choices_are_perfectly_balanced():
 
 def test_router_without_backends_raises():
     with pytest.raises(NoBackendAvailable):
-        Router([], RoundRobinStrategy()).choose()
+        Router([], RoundRobinStrategy()).choose(REQUEST)
 
 
 @pytest.mark.parametrize("text", ["localhost", ":80", "host:", "host:abc", "host:٣", "host:0", "host:70000", "[]:80"])
