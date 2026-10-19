@@ -2,7 +2,12 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
+
+if TYPE_CHECKING:
+    # Only for type hints: a real import would be circular
+    # (http_parser -> config -> strategies.base -> http_parser).
+    from lb.http_parser import HTTPRequest
 
 
 @dataclass(frozen=True)
@@ -40,8 +45,10 @@ class LoadBalancingStrategy(ABC):
     name: str = "base"
 
     @abstractmethod
-    def choose(self, backends: Sequence[Backend]) -> Backend:
+    def choose(self, backends: Sequence[Backend], request: "HTTPRequest") -> Backend:
         """Return one backend from a non-empty sequence.
 
-        Must be thread-safe: many connection threads call this concurrently.
+        `request` lets a strategy route by content (e.g. path or headers);
+        round robin ignores it. Must be thread-safe: many connection threads
+        call this concurrently.
         """

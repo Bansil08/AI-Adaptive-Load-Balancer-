@@ -165,6 +165,29 @@ def test_request_split_across_many_recv_calls(sock_pair):
     assert (req.method, req.target, req.body) == ("POST", "/upload", b"hello world")
 
 
+def test_missing_content_length_means_empty_body(sock_pair):
+    """No Content-Length (and no Transfer-Encoding) = no body, even for POST."""
+    ours, peer = sock_pair
+    peer.sendall(b"POST /a HTTP/1.1\r\nHost: h\r\n\r\nGET /b HTTP/1.1\r\nHost: h\r\n\r\n")
+    peer.shutdown(socket.SHUT_WR)
+    reader = SocketReader(ours)
+    first = read_request(reader)
+    assert (first.method, first.body) == ("POST", b"")
+    # The next request's bytes were not swallowed as a body.
+    assert read_request(reader).target == "/b"
+
+
+def test_large_body_read_completely(sock_pair):
+    """A 2 MB body arrives in many recv() calls and must be reassembled exactly."""
+    ours, peer = sock_pair
+    body = bytes(range(256)) * 8192  # 2 MiB, non-repeating within each 256 bytes
+    raw = b"PUT /big HTTP/1.1\r\nHost: h\r\nContent-Length: %d\r\n\r\n" % len(body) + body
+    t = send_in_pieces(peer, raw, piece=65536)
+    req = read_request(SocketReader(ours))
+    t.join()
+    assert len(req.body) == len(body) and req.body == body
+
+
 def test_two_requests_in_one_send_are_both_read(sock_pair):
     """Bytes after the first message stay buffered for the next one."""
     ours, peer = sock_pair

@@ -11,6 +11,7 @@ import time
 from http import HTTPStatus
 
 from lb import config
+from lb.config import ProxySettings
 from lb.http_parser import (
     Headers,
     HTTPRequest,
@@ -65,14 +66,14 @@ def build_backend_request(request: HTTPRequest, client_ip: str) -> bytes:
     return HTTPRequest(request.method, request.target, request.version, headers, request.body).to_bytes()
 
 
-def forward(request_bytes: bytes, method: str, backend: Backend) -> HTTPResponse:
+def forward(request_bytes: bytes, method: str, backend: Backend, settings: ProxySettings) -> HTTPResponse:
     """Send the request to the backend over a new TCP connection and read the response."""
     # create_connection resolves the name and performs the TCP 3-way handshake;
     # the timeout bounds how long we wait for the backend to accept.
     with socket.create_connection(
-        (backend.host, backend.port), timeout=config.BACKEND_CONNECT_TIMEOUT
+        (backend.host, backend.port), timeout=settings.backend_connect_timeout
     ) as sock:
-        sock.settimeout(config.BACKEND_READ_TIMEOUT)
+        sock.settimeout(settings.backend_read_timeout)
         sock.sendall(request_bytes)
         return read_response(SocketReader(sock), method)
 
@@ -97,17 +98,17 @@ def error_response(status: int) -> bytes:
 
 
 def _route_and_forward(
-    request: HTTPRequest, client_ip: str, router: Router
+    request: HTTPRequest, client_ip: str, router: Router, settings: ProxySettings
 ) -> tuple[int, bytes, Backend | None]:
     """Returns (status code, bytes to send to the client, backend used)."""
     try:
-        backend = router.choose()
+        backend = router.choose(request)
     except NoBackendAvailable as exc:
         log.warning("503: %s", exc)
         return 503, error_response(503), None
 
     try:
-        response = forward(build_backend_request(request, client_ip), request.method, backend)
+        response = forward(build_backend_request(request, client_ip), request.method, backend, settings)
     # TimeoutError is a subclass of OSError, so it must be caught first.
     except TimeoutError:
         log.warning("504: backend %s timed out", backend)
@@ -129,12 +130,40 @@ def _send(sock: socket.socket, data: bytes) -> None:
         log.debug("could not send to client: %s", exc)
 
 
-def handle_client(client_sock: socket.socket, client_addr: tuple, router: Router) -> None:
+def close_gracefully(sock: socket.socket) -> None:
+    """Close without a TCP reset, so the client is sure to receive our response.
+
+    If we close() while unread client bytes are still in our receive buffer
+    (e.g. the body of a request we rejected with 413), the kernel sends RST
+    instead of FIN, and the RST can destroy the response before the client
+    reads it. So we send FIN with shutdown(SHUT_WR), read and discard whatever
+    the client still sends until it closes too (or a deadline passes), and
+    only then close(). This is the "lingering close" that Apache/nginx use.
+    """
+    try:
+        sock.shutdown(socket.SHUT_WR)
+        deadline = time.monotonic() + config.LINGER_SECONDS
+        while (remaining := deadline - time.monotonic()) > 0:
+            sock.settimeout(remaining)
+            if not sock.recv(64 * 1024):
+                break  # client closed its side: clean four-way close
+    except OSError:
+        pass  # client already gone or deadline hit; nothing more to do
+    finally:
+        sock.close()
+
+
+def handle_client(
+    client_sock: socket.socket,
+    client_addr: tuple,
+    router: Router,
+    settings: ProxySettings = ProxySettings(),
+) -> None:
     """Serve one client connection: read one request, proxy it, reply, close."""
     client_ip = client_addr[0]
     start = time.perf_counter()
-    with client_sock:
-        client_sock.settimeout(config.CLIENT_TIMEOUT)
+    try:
+        client_sock.settimeout(settings.client_timeout)
         try:
             request = read_request(
                 SocketReader(client_sock),
@@ -154,11 +183,13 @@ def handle_client(client_sock: socket.socket, client_addr: tuple, router: Router
         if request is None:
             return  # connected and closed without sending anything
 
-        status, reply, backend = _route_and_forward(request, client_ip, router)
+        status, reply, backend = _route_and_forward(request, client_ip, router, settings)
         _send(client_sock, reply)
-
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    log.info(
-        "%s %s %s -> %s %d %.1fms",
-        client_ip, request.method, request.target, backend or "-", status, elapsed_ms,
-    )
+        # Measured before the lingering close: that wait is not request latency.
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        log.info(
+            "%s %s %s -> %s %d %.1fms",
+            client_ip, request.method, request.target, backend or "-", status, elapsed_ms,
+        )
+    finally:
+        close_gracefully(client_sock)

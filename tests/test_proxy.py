@@ -1,6 +1,7 @@
 """End-to-end tests: real backends + real load balancer over localhost TCP."""
 
 import errno
+from collections import Counter
 import http.client
 import json
 import socket
@@ -9,7 +10,7 @@ import threading
 import pytest
 
 from backend.app import BackendServer
-from lb import config
+from lb.config import ProxySettings
 from lb.router import Router
 from lb import server as server_module
 from lb.server import LoadBalancer
@@ -24,8 +25,8 @@ def start_backend(name: str, delay_ms: float = 0) -> BackendServer:
     return server
 
 
-def start_lb(backends: list[Backend]) -> tuple[LoadBalancer, int]:
-    lb = LoadBalancer(Router(backends, RoundRobinStrategy()), "127.0.0.1", 0)
+def start_lb(backends: list[Backend], settings: ProxySettings = ProxySettings()) -> tuple[LoadBalancer, int]:
+    lb = LoadBalancer(Router(backends, RoundRobinStrategy()), "127.0.0.1", 0, settings)
     _, port = lb.start()
     threading.Thread(target=lb.serve_forever, daemon=True).start()
     return lb, port
@@ -76,6 +77,36 @@ def raw_request(port, data: bytes) -> bytes:
 def test_round_robin_across_real_backends(cluster):
     served_by = [json.loads(request(cluster)[2])["server"] for _ in range(6)]
     assert served_by == ["a", "b", "c", "a", "b", "c"]
+
+
+def test_requests_are_spread_evenly(cluster):
+    counts = Counter(json.loads(request(cluster)[2])["server"] for _ in range(30))
+    assert counts == {"a": 10, "b": 10, "c": 10}
+
+
+def test_get_root_reports_name_and_delay():
+    backend = start_backend("named", delay_ms=25)
+    lb, port = start_lb([as_backend(backend)])
+    try:
+        payload = json.loads(request(port)[2])
+        assert payload["server"] == "named" and payload["delay_ms"] == 25
+    finally:
+        lb.shutdown()
+        backend.shutdown()
+        backend.server_close()
+
+
+def test_rejected_upload_still_receives_its_response(cluster):
+    """Regression: the LB answered 413 then close()d with the unread body still
+    in its receive buffer, so the kernel sent RST and a client that uploads
+    first and reads afterwards (like http.client) got BrokenPipeError instead
+    of the 413. The lingering close fixes that."""
+    conn = http.client.HTTPConnection("127.0.0.1", cluster, timeout=10)
+    try:
+        conn.request("POST", "/", body=b"x" * (11 * 1024 * 1024))  # over the 10 MB limit
+        assert conn.getresponse().status == 413
+    finally:
+        conn.close()
 
 
 def test_adds_x_forwarded_for(cluster):
@@ -151,10 +182,9 @@ def test_no_backends_gives_503():
         lb.shutdown()
 
 
-def test_slow_backend_gives_504(monkeypatch):
-    monkeypatch.setattr(config, "BACKEND_READ_TIMEOUT", 0.2)
+def test_slow_backend_gives_504():
     slow = start_backend("slow", delay_ms=1000)
-    lb, port = start_lb([as_backend(slow)])
+    lb, port = start_lb([as_backend(slow)], ProxySettings(backend_read_timeout=0.2))
     try:
         assert request(port)[0] == 504
     finally:

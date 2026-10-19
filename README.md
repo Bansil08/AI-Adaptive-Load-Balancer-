@@ -39,24 +39,26 @@ To stop the database: `docker compose down` (data is kept in the `pgdata` volume
 
 ## Run the load balancer (Phase 1)
 
-Each command in its own terminal (with the venv activated):
-
 ```bash
-python -m backend.app --port 9001 --name fast   --delay-ms 10
-python -m backend.app --port 9002 --name medium --delay-ms 50
-python -m backend.app --port 9003 --name slow   --delay-ms 200
+# Postgres + three test backends: fast (20 ms) :9001, medium (60 ms) :9002, slow (150 ms) :9003
+docker compose up -d
 
-python -m lb.server --port 8080 \
-    --backend 127.0.0.1:9001 --backend 127.0.0.1:9002 --backend 127.0.0.1:9003
+# The LB reads backends, port, strategy and timeouts from lb.toml
+python -m lb.server
+
+# In another terminal: round robin rotates fast -> medium -> slow
+for i in 1 2 3 4 5 6; do curl -s localhost:8080/; done
 ```
 
-Then send requests; round robin rotates fast → medium → slow:
+Stop a backend (`docker compose stop backend-slow`) and its turns return `502 Bad Gateway`. A backend slower than `backend_read` in `lb.toml` returns `504 Gateway Timeout`. Health checks that skip dead backends arrive in Phase 3. Ctrl+C stops the LB.
+
+Without Docker, start the backends as processes instead (one terminal each):
 
 ```bash
-curl -i http://127.0.0.1:8080/hello
+python -m backend.app --port 9001 --name fast   --delay-ms 20
+python -m backend.app --port 9002 --name medium --delay-ms 60
+python -m backend.app --port 9003 --name slow   --delay-ms 150
 ```
-
-Stop a backend and the LB answers `502 Bad Gateway` when round robin picks it (health checks that skip dead backends arrive in Phase 3). Press Ctrl+C to stop the LB.
 
 ## Repository layout
 
@@ -69,6 +71,8 @@ Stop a backend and the LB answers `502 Bad Gateway` when round robin picks it (h
 | `experiments/` | Load generator, scenarios, experiment runner and plotting |
 | `dashboard/` | Flask + Chart.js dashboard |
 | `scripts/` | Helper scripts (`init_db.py`) |
+| `lb.toml` | Load balancer config: backends, listen port, strategy, timeouts |
+| `phase-*.md` | The instructions for each build phase |
 | `tests/` | pytest suite |
 
 ## Architecture, results and analysis

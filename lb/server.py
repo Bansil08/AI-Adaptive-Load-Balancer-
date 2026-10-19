@@ -4,10 +4,12 @@ Phase 1 uses thread-per-connection, the simplest concurrent design. Phase 2
 replaces it with a bounded queue + fixed-size thread pool and measures the
 difference against this version.
 
-Run:  python -m lb.server --port 8080 --backend 127.0.0.1:9001 --backend 127.0.0.1:9002
+Run:  python -m lb.server                      (reads lb.toml)
+      python -m lb.server --config other.toml --port 9090
 """
 
 import argparse
+import tomllib
 import logging
 import socket
 import threading
@@ -16,7 +18,8 @@ import time
 from lb import config
 from lb.proxy import handle_client
 from lb.router import Router
-from lb.strategies import STRATEGIES, Backend
+from lb.config import ProxySettings
+from lb.strategies import STRATEGIES
 
 log = logging.getLogger(__name__)
 
@@ -27,8 +30,15 @@ ACCEPT_ERROR_BACKOFF_SECONDS = 0.1
 
 
 class LoadBalancer:
-    def __init__(self, router: Router, host: str = config.LB_HOST, port: int = config.LB_PORT):
+    def __init__(
+        self,
+        router: Router,
+        host: str = "127.0.0.1",
+        port: int = 8080,
+        settings: ProxySettings = ProxySettings(),
+    ):
         self.router = router
+        self.settings = settings
         self._address = (host, port)
         self._stop = threading.Event()
         self._sock: socket.socket | None = None
@@ -71,7 +81,7 @@ class LoadBalancer:
                 try:
                     threading.Thread(
                         target=handle_client,
-                        args=(client_sock, client_addr, self.router),
+                        args=(client_sock, client_addr, self.router, self.settings),
                         name=f"conn-{client_addr[0]}:{client_addr[1]}",
                         daemon=True,
                     ).start()
@@ -90,24 +100,26 @@ class LoadBalancer:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Adaptive load balancer")
-    parser.add_argument("--host", default=config.LB_HOST)
-    parser.add_argument("--port", type=int, default=config.LB_PORT)
-    parser.add_argument(
-        "--backend", action="append", type=Backend.parse, dest="backends",
-        help="backend as host:port; repeat for several (default: $LB_BACKENDS)",
-    )
-    parser.add_argument("--strategy", choices=sorted(STRATEGIES), default="round_robin")
+    parser.add_argument("--config", default=config.DEFAULT_LB_CONFIG,
+                        help="TOML config file (default: lb.toml in the repo root)")
+    parser.add_argument("--port", type=int, help="override [listen] port from the config file")
     args = parser.parse_args()
+
+    try:
+        cfg = config.load_lb_config(args.config)
+    except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
+        parser.error(f"cannot load config: {exc}")
+    if cfg.strategy not in STRATEGIES:
+        parser.error(f"unknown strategy {cfg.strategy!r}; choose from {sorted(STRATEGIES)}")
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)-7s %(threadName)s: %(message)s"
     )
-    backends = args.backends or [Backend.parse(b) for b in config.LB_BACKENDS.split(",")]
-    router = Router(backends, STRATEGIES[args.strategy]())
-    lb = LoadBalancer(router, args.host, args.port)
+    router = Router(cfg.backends, STRATEGIES[cfg.strategy]())
+    lb = LoadBalancer(router, cfg.host, args.port or cfg.port, cfg.proxy)
     host, port = lb.start()
     log.info("listening on %s:%d, strategy=%s, backends=%s",
-             host, port, args.strategy, ", ".join(map(str, backends)))
+             host, port, cfg.strategy, ", ".join(map(str, cfg.backends)) or "(none)")
     try:
         lb.serve_forever()
     except KeyboardInterrupt:
