@@ -12,6 +12,7 @@ security risk (HTTP request smuggling): we reject rather than guess.
 
 import re
 import socket
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Iterator
 
@@ -215,12 +216,28 @@ class SocketReader:
     is lost if the peer sends the next message in the same TCP segment.
     """
 
-    def __init__(self, sock: socket.socket, max_head: int = config.MAX_HEADER_BYTES):
+    def __init__(
+        self,
+        sock: socket.socket,
+        max_head: int = config.MAX_HEADER_BYTES,
+        deadline: float | None = None,
+    ):
         self._sock = sock
         self._max_head = max_head
         self._buf = bytearray()
+        # time.monotonic() by which the whole message must have arrived. A plain
+        # socket timeout only limits the gap between two recv() calls, so a
+        # client sending one byte just inside it ("slowloris") could hold a
+        # worker forever; with a fixed thread pool, a handful of those stall
+        # every other client.
+        self._deadline = deadline
 
     def _recv(self) -> bytes:
+        if self._deadline is not None:
+            remaining = self._deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("deadline for the whole message passed")
+            self._sock.settimeout(remaining)
         return self._sock.recv(RECV_SIZE)
 
     def read_head(self) -> bytes | None:

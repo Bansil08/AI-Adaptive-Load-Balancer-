@@ -6,6 +6,7 @@ import http.client
 import json
 import socket
 import threading
+import time
 
 import pytest
 
@@ -201,6 +202,37 @@ def test_no_backends_gives_503():
         assert request(port)[0] == 503
     finally:
         lb.shutdown()
+
+
+def test_slow_drip_client_is_cut_off_at_the_whole_request_deadline():
+    """Regression (slowloris): one byte every 0.3 s, each well inside a 1 s
+    timeout. A per-recv() timeout never fires, so the client held a pool
+    worker indefinitely (measured: 18.7 s and counting). Now the whole request
+    must arrive within client_timeout, so it gets 408 after ~1 s."""
+    backend = start_backend("a")
+    lb, port = start_lb([as_backend(backend)], ProxySettings(client_timeout=1.0))
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+            started = time.monotonic()
+            reply = b""
+            for byte in b"GET / HTTP/1.1\r\nX-Pad: " + b"a" * 20:
+                try:
+                    s.sendall(bytes([byte]))
+                except OSError:
+                    break
+                s.settimeout(0.3)
+                try:
+                    reply = s.recv(4096)
+                except TimeoutError:
+                    continue
+                break  # the LB answered
+            elapsed = time.monotonic() - started
+        assert reply.startswith(b"HTTP/1.1 408 ")
+        assert 0.9 < elapsed < 2.0
+    finally:
+        lb.shutdown()
+        backend.shutdown()
+        backend.server_close()
 
 
 def test_slow_backend_gives_504():

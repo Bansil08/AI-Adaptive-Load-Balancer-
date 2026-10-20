@@ -53,7 +53,7 @@ LINGER_SECONDS = 2.0
 class ProxySettings:
     """Timeouts in seconds. Without them a silent peer would hold a thread forever."""
 
-    client_timeout: float = 10.0
+    client_timeout: float = 10.0  # for the WHOLE request (head + body), not per recv()
     backend_connect_timeout: float = 2.0
     backend_read_timeout: float = 30.0
 

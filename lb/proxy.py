@@ -178,7 +178,7 @@ def handle_client(
         client_sock.settimeout(settings.client_timeout)
         try:
             request = read_request(
-                SocketReader(client_sock),
+                SocketReader(client_sock, deadline=time.monotonic() + settings.client_timeout),
                 on_expect_continue=lambda: client_sock.sendall(CONTINUE_RESPONSE),
             )
         except ParseError as exc:
