@@ -58,12 +58,22 @@ class ProxySettings:
 
 
 @dataclass(frozen=True)
+class ConcurrencySettings:
+    """Thread pool and queue sizes, and how long a shutdown waits for in-flight work."""
+
+    workers: int = 32           # fixed number of worker threads
+    queue_size: int = 128       # accepted connections waiting for a worker
+    shutdown_timeout: float = 10.0  # seconds to let in-flight requests finish
+
+
+@dataclass(frozen=True)
 class LBConfig:
     host: str
     port: int
     strategy: str
     backends: tuple[Backend, ...]
     proxy: ProxySettings
+    concurrency: ConcurrencySettings = ConcurrencySettings()
 
 
 def load_lb_config(path: Path | str = DEFAULT_LB_CONFIG) -> LBConfig:
@@ -72,7 +82,9 @@ def load_lb_config(path: Path | str = DEFAULT_LB_CONFIG) -> LBConfig:
         data = tomllib.load(f)
     listen = data.get("listen", {})
     timeouts = data.get("timeouts", {})
+    pool = data.get("concurrency", {})
     defaults = ProxySettings()
+    pool_defaults = ConcurrencySettings()
     try:
         entries = data.get("backends", [])
         if not isinstance(entries, list) or not all(isinstance(e, str) for e in entries):
@@ -83,15 +95,32 @@ def load_lb_config(path: Path | str = DEFAULT_LB_CONFIG) -> LBConfig:
             backend_connect_timeout=float(timeouts.get("backend_connect", defaults.backend_connect_timeout)),
             backend_read_timeout=float(timeouts.get("backend_read", defaults.backend_read_timeout)),
         )
+        concurrency = ConcurrencySettings(
+            workers=_whole_number(pool.get("workers", pool_defaults.workers), "workers"),
+            queue_size=_whole_number(pool.get("queue_size", pool_defaults.queue_size), "queue_size"),
+            shutdown_timeout=float(pool.get("shutdown_timeout", pool_defaults.shutdown_timeout)),
+        )
         port = int(listen.get("port", 8080))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{path}: {exc}") from None
     if min(proxy.client_timeout, proxy.backend_connect_timeout, proxy.backend_read_timeout) <= 0:
         raise ValueError(f"{path}: timeouts must be positive")
+    if concurrency.workers < 1 or concurrency.queue_size < 1:
+        raise ValueError(f"{path}: workers and queue_size must be at least 1")
+    if concurrency.shutdown_timeout < 0:
+        raise ValueError(f"{path}: shutdown_timeout must not be negative")
     return LBConfig(
         host=str(listen.get("host", "127.0.0.1")),
         port=port,
         strategy=str(data.get("strategy", "round_robin")),
         backends=backends,
         proxy=proxy,
+        concurrency=concurrency,
     )
+
+
+def _whole_number(value, name: str) -> int:
+    # int(2.7) would silently truncate and int(True) is 1; reject both.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be a whole number, got {value!r}")
+    return value

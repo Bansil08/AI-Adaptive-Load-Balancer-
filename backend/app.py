@@ -14,6 +14,10 @@ class BackendServer(ThreadingHTTPServer):
     """http.server with a thread per request, plus the delay settings."""
 
     daemon_threads = True
+    # socketserver's default listen backlog is only 5: with more simultaneous
+    # connects the kernel drops the extra SYNs and clients stall for a ~1 s
+    # retransmit. Match the load balancer's backlog so the backend isn't the bottleneck.
+    request_queue_size = 128
 
     def __init__(self, address, name: str, delay_ms: float = 0, jitter_ms: float = 0, quiet: bool = False):
         super().__init__(address, BackendHandler)

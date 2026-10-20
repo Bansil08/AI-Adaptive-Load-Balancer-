@@ -2,7 +2,7 @@
 
 An HTTP load balancer built on raw sockets and threads in Python. It routes traffic across backends of different speeds using round robin, least connections and two ML-based strategies, performs health checks and failover, logs every request to PostgreSQL, and includes an experiment harness that compares the strategies under different traffic scenarios.
 
-> **Status:** Phase 1 (basic proxy with round robin). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
+> **Status:** Phase 2 (thread pool, shared stats, graceful shutdown). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ pytest
 
 To stop the database: `docker compose down` (data is kept in the `pgdata` volume; `docker compose down -v` deletes it).
 
-## Run the load balancer (Phase 1)
+## Run the load balancer
 
 ```bash
 # Postgres + three test backends: fast (20 ms) :9001, medium (60 ms) :9002, slow (150 ms) :9003
@@ -50,7 +50,17 @@ python -m lb.server
 for i in 1 2 3 4 5 6; do curl -s localhost:8080/; done
 ```
 
-Stop a backend (`docker compose stop backend-slow`) and its turns return `502 Bad Gateway`. A backend slower than `backend_read` in `lb.toml` returns `504 Gateway Timeout`. Health checks that skip dead backends arrive in Phase 3. Ctrl+C stops the LB.
+Stop a backend (`docker compose stop backend-slow`) and its turns return `502 Bad Gateway`. A backend slower than `backend_read` in `lb.toml` returns `504 Gateway Timeout`. Health checks that skip dead backends arrive in Phase 3.
+
+Connections are served by a fixed pool of worker threads fed by a bounded queue; `[concurrency]` in `lb.toml` sets `workers`, `queue_size` and `shutdown_timeout`. Ctrl+C (SIGINT) or `kill` (SIGTERM) shuts down gracefully: new connections are refused, in-flight requests finish (for up to `shutdown_timeout` seconds), then the process exits. A second Ctrl+C exits immediately. `--thread-per-connection` switches to the Phase 1 design for comparison.
+
+### Benchmark: thread pool vs thread-per-connection
+
+```bash
+python -m experiments.benchmark_concurrency   # ~15 min; starts its own backends and LBs
+```
+
+Results (with the exact setup) are saved to `experiments/results/concurrency_benchmark.md` and `.json`.
 
 Without Docker, start the backends as processes instead (one terminal each):
 

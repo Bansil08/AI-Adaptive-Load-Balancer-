@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Iterable
 
+from lb.stats import ServerStats
 from lb.strategies.base import Backend, LoadBalancingStrategy
 
 if TYPE_CHECKING:
@@ -13,7 +14,7 @@ class NoBackendAvailable(Exception):
 
 
 class Router:
-    """Holds the backend list and the active strategy.
+    """Holds the backend list, the active strategy and the shared per-backend stats.
 
     Phase 3 adds health filtering here (skip backends whose circuit is open)
     and runtime add/remove from the admin endpoint.
@@ -23,6 +24,7 @@ class Router:
         # A tuple is immutable, so strategies get a consistent snapshot to index into.
         self._backends = tuple(backends)
         self.strategy = strategy
+        self.stats = ServerStats(self._backends)
 
     @property
     def backends(self) -> tuple[Backend, ...]:

@@ -10,7 +10,10 @@ venv/
 
 # ML artefacts and experiment outputs (regenerated, not source)
 ml/models/
-experiments/results/
+experiments/results/*
+# ...except the measured benchmark reports that the docs cite
+!experiments/results/concurrency_benchmark.md
+!experiments/results/concurrency_benchmark.json
 
 # OS / editor
 .DS_Store
