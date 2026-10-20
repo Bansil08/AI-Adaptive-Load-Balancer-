@@ -57,7 +57,7 @@ Connections are served by a fixed pool of worker threads fed by a bounded queue;
 ### Benchmark: thread pool vs thread-per-connection
 
 ```bash
-python -m experiments.benchmark_concurrency   # ~15 min; starts its own backends and LBs
+python -m experiments.benchmark_concurrency   # ~25 min (waits for TIME_WAIT between runs); starts its own backends and LBs
 ```
 
 Results (with the exact setup) are saved to `experiments/results/concurrency_benchmark.md` and `.json`.

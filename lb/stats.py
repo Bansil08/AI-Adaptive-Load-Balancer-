@@ -4,6 +4,11 @@ Every worker thread updates these (request started / finished) and every
 routing decision may read them (least connections in Phase 5, the ML
 strategies in Phase 6), so they need synchronisation. See lb/rwlock.py for
 why a readers-writers lock and why the writer-preference variant.
+
+Honest caveat: today every request takes the write lock twice and nothing
+reads on the hot path yet, so for now a plain mutex would do the same job.
+The readers-writers lock pays off once least connections (Phase 5) reads a
+snapshot on every routing decision and the dashboard polls it.
 """
 
 from dataclasses import dataclass

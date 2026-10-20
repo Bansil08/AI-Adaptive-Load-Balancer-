@@ -20,6 +20,7 @@ Run:  python -m experiments.benchmark_concurrency
 import argparse
 import http.client
 import json
+import math
 import os
 import platform
 import resource
@@ -176,24 +177,29 @@ def run_load(port: int, concurrency: int, duration: float) -> dict:
     def client():
         mine, my_errors = [], []
         start_line.wait()
-        while time.monotonic() < end_at[0]:
-            started = time.perf_counter()
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
-            try:
-                conn.request("GET", "/")
-                resp = conn.getresponse()
-                resp.read()
-                if resp.status == 200:
-                    mine.append((time.perf_counter() - started) * 1000)
-                else:
-                    my_errors.append(f"HTTP {resp.status}")
-            except OSError as exc:
-                my_errors.append(type(exc).__name__)
-            finally:
-                conn.close()
-        with lock:
-            latencies.extend(mine)
-            errors.extend(my_errors)
+        try:
+            while time.monotonic() < end_at[0]:
+                started = time.perf_counter()
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                try:
+                    conn.request("GET", "/")
+                    resp = conn.getresponse()
+                    resp.read()
+                    if resp.status == 200:
+                        mine.append((time.perf_counter() - started) * 1000)
+                    else:
+                        my_errors.append(f"HTTP {resp.status}")
+                # HTTPException covers IncompleteRead / BadStatusLine, which are not OSErrors.
+                except (OSError, http.client.HTTPException) as exc:
+                    my_errors.append(type(exc).__name__)
+                finally:
+                    conn.close()
+        finally:
+            # Merge even if something unexpected kills this thread, so its
+            # measurements are never silently dropped.
+            with lock:
+                latencies.extend(mine)
+                errors.extend(my_errors)
 
     threads = [threading.Thread(target=client, daemon=True) for _ in range(concurrency)]
     for t in threads:
@@ -217,8 +223,14 @@ def run_load(port: int, concurrency: int, duration: float) -> dict:
         "elapsed_s": round(elapsed, 3),
         "throughput_rps": round(len(latencies) / elapsed, 1),
         "avg_latency_ms": round(statistics.fmean(latencies), 1) if latencies else None,
-        "p95_latency_ms": round(latencies[int(0.95 * (len(latencies) - 1))], 1) if latencies else None,
+        "p95_latency_ms": round(percentile(latencies, 95), 1) if latencies else None,
     }
+
+
+def percentile(sorted_values: list[float], p: float) -> float:
+    """Nearest-rank percentile: the smallest value with at least p% of samples at or below it."""
+    rank = math.ceil(p / 100 * len(sorted_values))
+    return sorted_values[max(rank, 1) - 1]
 
 
 # --- report ----------------------------------------------------------------------

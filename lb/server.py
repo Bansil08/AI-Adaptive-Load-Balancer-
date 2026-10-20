@@ -33,7 +33,7 @@ import time
 
 from lb import config
 from lb.bounded_queue import BoundedQueue, QueueClosed
-from lb.proxy import handle_client
+from lb.proxy import close_gracefully, error_response, handle_client
 from lb.router import Router
 from lb.config import ConcurrencySettings, ProxySettings
 from lb.strategies import STRATEGIES
@@ -90,16 +90,17 @@ class LoadBalancer:
         """Accept connections until shutdown() is called, then drain and return."""
         if self._sock is None:
             self.start()
-        if not self.thread_per_connection:
-            # Workers are daemons only as a last resort: if one is still stuck
-            # after shutdown_timeout, it must not keep the process alive.
-            self._workers = [
-                threading.Thread(target=self._worker, name=f"worker-{i}", daemon=True)
-                for i in range(self.concurrency.workers)
-            ]
-            for worker in self._workers:
-                worker.start()
         try:
+            if not self.thread_per_connection:
+                # Workers are daemons only as a last resort: if one is still stuck
+                # after shutdown_timeout, it must not keep the process alive.
+                # Started inside the try: if the OS refuses thread N ("can't start
+                # new thread"), the finally still closes the socket and lets the
+                # workers already running exit.
+                for i in range(self.concurrency.workers):
+                    worker = threading.Thread(target=self._worker, name=f"worker-{i}", daemon=True)
+                    worker.start()
+                    self._workers.append(worker)
             self._accept_loop()
         finally:
             # Stop accepting first: from here new connections are refused by the
@@ -144,7 +145,15 @@ class LoadBalancer:
         # behind workers that are all stuck on a slow backend.
         while not self._queue.put((client_sock, client_addr), timeout=ACCEPT_POLL_SECONDS):
             if self._stop.is_set():
-                client_sock.close()
+                # Shutting down with no room left: answer instead of silently
+                # closing, so the client knows to retry elsewhere. (Connections
+                # still in the kernel backlog, never accept()ed, are reset by the
+                # kernel when the listening socket closes; we can't answer those.)
+                try:
+                    client_sock.sendall(error_response(503))
+                except OSError:
+                    pass
+                close_gracefully(client_sock)
                 return
 
     # --- consumers: the worker pool --------------------------------------------
@@ -248,10 +257,12 @@ def main() -> None:
 
     def on_signal(signum, frame):
         lb.shutdown()
-        # A second Ctrl+C / SIGTERM now gets the OS default action: kill
-        # immediately, for when draining takes too long. (No logging in here:
-        # the logging module takes a lock the interrupted main thread may hold.)
-        signal.signal(signum, signal.SIG_DFL)
+        # A second signal of either kind (e.g. SIGTERM, then Ctrl+C) now gets the
+        # OS default action: kill immediately, for when draining takes too long.
+        # (No logging in here: the logging module takes a lock the interrupted
+        # main thread may hold.)
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
     # Python runs signal handlers on the main thread, which is the listener.
     signal.signal(signal.SIGINT, on_signal)

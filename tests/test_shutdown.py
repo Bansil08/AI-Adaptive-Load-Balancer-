@@ -11,6 +11,7 @@ import pytest
 
 from lb.config import PROJECT_ROOT, ConcurrencySettings
 from lb.router import Router
+from lb import server as server_module
 from lb.server import LoadBalancer
 from lb.strategies.round_robin import RoundRobinStrategy
 from tests.test_proxy import as_backend, request, start_backend, unused_port
@@ -85,6 +86,56 @@ def test_queued_connections_are_served_before_exit(slow_backend):
     assert [result for _, result in clients] == [[200], [200], [200]]
 
 
+def test_connection_waiting_for_a_full_queue_gets_503_on_shutdown():
+    """Regression: the listener held an accepted connection it couldn't queue
+    and, on shutdown, closed it with no response at all."""
+    slow = start_backend("slow", delay_ms=1000)
+    lb, port, serving = start_lb(slow, concurrency=ConcurrencySettings(workers=1, queue_size=1))
+    try:
+        first = client_in_thread(port)
+        wait_until(lambda: lb.router.stats.get(lb.router.backends[0]).active_connections == 1)
+        second = client_in_thread(port)
+        wait_until(lambda: len(lb._queue) == 1)
+        third = client_in_thread(port)  # accepted, but the listener can't queue it
+        time.sleep(0.1)
+
+        lb.shutdown()
+        serving.join(10)
+        for thread, _ in (first, second, third):
+            thread.join(5)
+        assert [first[1], second[1], third[1]] == [[200], [200], [503]]
+    finally:
+        slow.shutdown()
+        slow.server_close()
+
+
+def test_failing_to_start_a_worker_cleans_up(slow_backend, monkeypatch):
+    """Regression: a "can't start new thread" while creating the pool escaped
+    serve_forever with the listening socket still open and workers stranded."""
+    started = []
+    real_thread = threading.Thread
+
+    class FailThirdWorker(real_thread):
+        def start(self):
+            if len(started) == 2:
+                raise RuntimeError("can't start new thread")
+            started.append(self)
+            super().start()
+
+    lb = LoadBalancer(Router([as_backend(slow_backend)], RoundRobinStrategy()), "127.0.0.1", 0,
+                      concurrency=ConcurrencySettings(workers=4))
+    _, port = lb.start()
+    monkeypatch.setattr(server_module.threading, "Thread", FailThirdWorker)
+    with pytest.raises(RuntimeError):
+        lb.serve_forever()
+    monkeypatch.undo()
+    for worker in started:
+        worker.join(2)
+    assert not any(w.is_alive() for w in started), "started workers were left blocked in get()"
+    with pytest.raises(ConnectionRefusedError):
+        request(port)
+
+
 def test_shutdown_gives_up_after_the_timeout(caplog):
     stuck = start_backend("stuck", delay_ms=5000)
     lb, port, serving = start_lb(stuck, concurrency=ConcurrencySettings(shutdown_timeout=0.3))
@@ -138,3 +189,37 @@ def test_signal_drains_in_flight_request_and_exits_cleanly(tmp_path, slow_backen
     assert result == [200]
     assert exit_code == 0
     assert "stopped" in rest
+
+
+def test_second_signal_of_a_different_kind_force_kills(tmp_path):
+    """SIGTERM starts a drain that is stuck on a 5 s backend; Ctrl+C must then
+    kill at once. Regression: only the signal that arrived was reset, so SIGINT
+    after SIGTERM just re-ran the graceful handler."""
+    stuck = start_backend("stuck", delay_ms=5000)
+    port = unused_port()
+    config = tmp_path / "lb.toml"
+    config.write_text(f'backends = ["127.0.0.1:{stuck.server_address[1]}"]\n'
+                      f'[listen]\nport = {port}\n[concurrency]\nshutdown_timeout = 30\n')
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "lb.server", "--config", str(config)],
+        cwd=PROJECT_ROOT, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        for line in proc.stderr:
+            if "listening on" in line:
+                break
+        client_in_thread(port)
+        time.sleep(0.2)
+        proc.send_signal(signal.SIGTERM)
+        time.sleep(0.3)
+        started = time.monotonic()
+        proc.send_signal(signal.SIGINT)
+        exit_code = proc.wait(5)
+        assert time.monotonic() - started < 2
+        assert exit_code == -signal.SIGINT  # killed by the signal's default action
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        stuck.shutdown()
+        stuck.server_close()

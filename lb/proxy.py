@@ -112,24 +112,25 @@ def _route_and_forward(
     # Only a response or a timeout says how fast the backend is. A refused
     # connection fails in ~1 ms; counting it would make a dead backend look
     # like the fastest one to latency-based strategies.
-    latency_ms = None
+    speed_known = True
     try:
         response = forward(build_backend_request(request, client_ip), request.method, backend, settings)
-        latency_ms = (time.perf_counter() - started) * 1000
     # TimeoutError is a subclass of OSError, so it must be caught first.
     except TimeoutError:
-        latency_ms = (time.perf_counter() - started) * 1000
         log.warning("504: backend %s timed out", backend)
         return 504, error_response(504), backend
     except ParseError as exc:
+        speed_known = False
         log.warning("502: invalid response from backend %s: %s", backend, exc.message)
         return 502, error_response(502), backend
     except OSError as exc:  # connection refused/reset, host unreachable, ...
+        speed_known = False
         log.warning("502: cannot reach backend %s: %s", backend, exc)
         return 502, error_response(502), backend
     finally:
         # In `finally` so a failed request still decrements active connections.
-        router.stats.request_finished(backend, latency_ms)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        router.stats.request_finished(backend, elapsed_ms if speed_known else None)
     return response.status_code, client_response_bytes(response), backend
 
 

@@ -60,7 +60,12 @@ def test_missing_sections_use_defaults(tmp_path):
     "content",
     ['backends = ["no-port"]', "[timeouts]\nbackend_read = 0", '[listen]\nport = "abc"', "backends = [5]", "backends = \"127.0.0.1:9001\"",
      "[concurrency]\nworkers = 0", "[concurrency]\nqueue_size = 1.5", '[concurrency]\nworkers = "4"',
-     "[concurrency]\nworkers = true", "[concurrency]\nshutdown_timeout = -1"],
+     "[concurrency]\nworkers = true", "[concurrency]\nshutdown_timeout = -1",
+     # TOML accepts inf/nan; join(inf) raised OverflowError mid-shutdown.
+     "[concurrency]\nshutdown_timeout = inf", "[concurrency]\nshutdown_timeout = nan",
+     "[timeouts]\nclient = inf",
+     # A scalar where a table belongs used to escape as AttributeError.
+     "concurrency = 32", "listen = 8080", 'timeouts = "fast"'],
 )
 def test_bad_config_values_raise_value_error(tmp_path, content):
     path = tmp_path / "lb.toml"

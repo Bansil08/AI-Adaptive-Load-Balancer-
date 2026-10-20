@@ -1,5 +1,6 @@
 """Central configuration: reads settings from environment variables (and a local .env file)."""
 
+import math
 import os
 import tomllib
 from dataclasses import dataclass
@@ -80,6 +81,9 @@ def load_lb_config(path: Path | str = DEFAULT_LB_CONFIG) -> LBConfig:
     """Read the load balancer's TOML config file. Raises ValueError on bad values."""
     with open(path, "rb") as f:  # tomllib requires a binary file
         data = tomllib.load(f)
+    for section in ("listen", "timeouts", "concurrency"):
+        if not isinstance(data.get(section, {}), dict):
+            raise ValueError(f"{path}: [{section}] must be a table, e.g. [{section}] on its own line")
     listen = data.get("listen", {})
     timeouts = data.get("timeouts", {})
     pool = data.get("concurrency", {})
@@ -103,6 +107,12 @@ def load_lb_config(path: Path | str = DEFAULT_LB_CONFIG) -> LBConfig:
         port = int(listen.get("port", 8080))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{path}: {exc}") from None
+    # TOML allows inf and nan; socket.settimeout(inf) and Thread.join(inf)
+    # raise OverflowError, and every comparison with nan is False.
+    seconds = (proxy.client_timeout, proxy.backend_connect_timeout, proxy.backend_read_timeout,
+               concurrency.shutdown_timeout)
+    if not all(math.isfinite(s) for s in seconds):
+        raise ValueError(f"{path}: timeouts must be finite numbers of seconds")
     if min(proxy.client_timeout, proxy.backend_connect_timeout, proxy.backend_read_timeout) <= 0:
         raise ValueError(f"{path}: timeouts must be positive")
     if concurrency.workers < 1 or concurrency.queue_size < 1:
