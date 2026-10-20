@@ -16,6 +16,12 @@ host = "127.0.0.1"
 port = 8080
 
 [timeouts]  # seconds
-client = 10.0          # max wait for the client to send its request
+client = 3.0           # max time for the client to send its WHOLE request (head + body).
+                       # Each waiting client holds a pool worker, so keep this short.
 backend_connect = 2.0  # TCP handshake with a backend (refused -> 502, too slow -> 504)
 backend_read = 30.0    # waiting for the backend's response; too slow -> 504
+
+[concurrency]
+workers = 32            # fixed thread pool size
+queue_size = 128        # accepted connections waiting for a free worker; when full, accept() pauses
+shutdown_timeout = 10.0 # seconds to let in-flight requests finish after SIGINT/SIGTERM

@@ -6,11 +6,12 @@ import http.client
 import json
 import socket
 import threading
+import time
 
 import pytest
 
 from backend.app import BackendServer
-from lb.config import ProxySettings
+from lb.config import ConcurrencySettings, ProxySettings
 from lb.router import Router
 from lb import server as server_module
 from lb.server import LoadBalancer
@@ -25,8 +26,10 @@ def start_backend(name: str, delay_ms: float = 0) -> BackendServer:
     return server
 
 
-def start_lb(backends: list[Backend], settings: ProxySettings = ProxySettings()) -> tuple[LoadBalancer, int]:
-    lb = LoadBalancer(Router(backends, RoundRobinStrategy()), "127.0.0.1", 0, settings)
+def start_lb(
+    backends: list[Backend], settings: ProxySettings = ProxySettings(), **kwargs
+) -> tuple[LoadBalancer, int]:
+    lb = LoadBalancer(Router(backends, RoundRobinStrategy()), "127.0.0.1", 0, settings, **kwargs)
     _, port = lb.start()
     threading.Thread(target=lb.serve_forever, daemon=True).start()
     return lb, port
@@ -174,12 +177,62 @@ def test_dead_backend_gives_502():
         lb.shutdown()
 
 
+def test_stats_track_requests_and_skip_latency_of_refused_connections():
+    good = start_backend("good", delay_ms=30)
+    dead = Backend("127.0.0.1", unused_port())
+    lb, port = start_lb([as_backend(good), dead])
+    try:
+        assert [request(port)[0] for _ in range(4)] == [200, 502, 200, 502]
+        stats = lb.router.stats.snapshot()
+        good_stats = stats[as_backend(good)]
+        assert (good_stats.active_connections, good_stats.total_requests) == (0, 2)
+        assert good_stats.avg_latency_ms >= 30
+        # Refused in ~1 ms: counted as requests, but not as "a fast backend".
+        assert (stats[dead].active_connections, stats[dead].total_requests) == (0, 2)
+        assert stats[dead].avg_latency_ms is None
+    finally:
+        lb.shutdown()
+        good.shutdown()
+        good.server_close()
+
+
 def test_no_backends_gives_503():
     lb, port = start_lb([])
     try:
         assert request(port)[0] == 503
     finally:
         lb.shutdown()
+
+
+def test_slow_drip_client_is_cut_off_at_the_whole_request_deadline():
+    """Regression (slowloris): one byte every 0.3 s, each well inside a 1 s
+    timeout. A per-recv() timeout never fires, so the client held a pool
+    worker indefinitely (measured: 18.7 s and counting). Now the whole request
+    must arrive within client_timeout, so it gets 408 after ~1 s."""
+    backend = start_backend("a")
+    lb, port = start_lb([as_backend(backend)], ProxySettings(client_timeout=1.0))
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+            started = time.monotonic()
+            reply = b""
+            for byte in b"GET / HTTP/1.1\r\nX-Pad: " + b"a" * 20:
+                try:
+                    s.sendall(bytes([byte]))
+                except OSError:
+                    break
+                s.settimeout(0.3)
+                try:
+                    reply = s.recv(4096)
+                except TimeoutError:
+                    continue
+                break  # the LB answered
+            elapsed = time.monotonic() - started
+        assert reply.startswith(b"HTTP/1.1 408 ")
+        assert 0.9 < elapsed < 2.0
+    finally:
+        lb.shutdown()
+        backend.shutdown()
+        backend.server_close()
 
 
 def test_slow_backend_gives_504():
@@ -193,21 +246,34 @@ def test_slow_backend_gives_504():
         slow.server_close()
 
 
-def test_concurrent_requests_all_succeed(cluster):
-    """Thread-per-connection: 30 simultaneous clients are all served."""
+@pytest.mark.parametrize("thread_per_connection", [False, True], ids=["pool", "thread-per-connection"])
+def test_concurrent_requests_all_succeed(thread_per_connection):
+    """30 simultaneous clients are all served, in both modes. The pool has only
+    4 workers and a 2-slot queue, so most clients wait in the listen backlog."""
+    backend = start_backend("a", delay_ms=20)
+    lb, port = start_lb(
+        [as_backend(backend)],
+        concurrency=ConcurrencySettings(workers=4, queue_size=2),
+        thread_per_connection=thread_per_connection,
+    )
     results = []
     lock = threading.Lock()
 
     def client():
-        status = request(cluster)[0]
+        status = request(port)[0]
         with lock:
             results.append(status)
 
     threads = [threading.Thread(target=client) for _ in range(30)]
     for t in threads:
         t.start()
-    for t in threads:
-        t.join()
+    try:
+        for t in threads:
+            t.join()
+    finally:
+        lb.shutdown()
+        backend.shutdown()
+        backend.server_close()
     assert results == [200] * 30
 
 
@@ -245,8 +311,11 @@ def test_accept_error_does_not_crash_the_lb():
         backend.server_close()
 
 
-def test_thread_start_failure_drops_one_connection_not_the_lb(cluster, monkeypatch):
-    """Regression: "can't start new thread" must cost one connection, not the server."""
+def test_thread_start_failure_drops_one_connection_not_the_lb(monkeypatch):
+    """Regression: "can't start new thread" must cost one connection, not the server.
+    Only thread-per-connection starts threads per request; the pool's are made up front."""
+    backend = start_backend("a")
+    lb, port = start_lb([as_backend(backend)], thread_per_connection=True)
 
     class FailOnceThread(threading.Thread):
         failures_left = 1
@@ -257,8 +326,15 @@ def test_thread_start_failure_drops_one_connection_not_the_lb(cluster, monkeypat
                 raise RuntimeError("can't start new thread")
             super().start()
 
-    monkeypatch.setattr(server_module.threading, "Thread", FailOnceThread)
-    with pytest.raises(ConnectionError):  # this client's connection is closed on it
-        request(cluster)
-    monkeypatch.undo()
-    assert request(cluster)[0] == 200  # the LB is still serving
+    try:
+        # This patches threading.Thread globally, but the LB's handler thread is
+        # the first one started, so it takes the single failure.
+        monkeypatch.setattr(server_module.threading, "Thread", FailOnceThread)
+        with pytest.raises(ConnectionError):  # this client's connection is closed on it
+            request(port)
+        monkeypatch.undo()
+        assert request(port)[0] == 200  # the LB is still serving
+    finally:
+        lb.shutdown()
+        backend.shutdown()
+        backend.server_close()

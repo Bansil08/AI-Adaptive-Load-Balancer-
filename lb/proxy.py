@@ -107,6 +107,12 @@ def _route_and_forward(
         log.warning("503: %s", exc)
         return 503, error_response(503), None
 
+    router.stats.request_started(backend)
+    started = time.perf_counter()
+    # Only a response or a timeout says how fast the backend is. A refused
+    # connection fails in ~1 ms; counting it would make a dead backend look
+    # like the fastest one to latency-based strategies.
+    speed_known = True
     try:
         response = forward(build_backend_request(request, client_ip), request.method, backend, settings)
     # TimeoutError is a subclass of OSError, so it must be caught first.
@@ -114,11 +120,17 @@ def _route_and_forward(
         log.warning("504: backend %s timed out", backend)
         return 504, error_response(504), backend
     except ParseError as exc:
+        speed_known = False
         log.warning("502: invalid response from backend %s: %s", backend, exc.message)
         return 502, error_response(502), backend
     except OSError as exc:  # connection refused/reset, host unreachable, ...
+        speed_known = False
         log.warning("502: cannot reach backend %s: %s", backend, exc)
         return 502, error_response(502), backend
+    finally:
+        # In `finally` so a failed request still decrements active connections.
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        router.stats.request_finished(backend, elapsed_ms if speed_known else None)
     return response.status_code, client_response_bytes(response), backend
 
 
@@ -166,7 +178,7 @@ def handle_client(
         client_sock.settimeout(settings.client_timeout)
         try:
             request = read_request(
-                SocketReader(client_sock),
+                SocketReader(client_sock, deadline=time.monotonic() + settings.client_timeout),
                 on_expect_continue=lambda: client_sock.sendall(CONTINUE_RESPONSE),
             )
         except ParseError as exc:
