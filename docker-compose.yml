@@ -1,8 +1,9 @@
 # Shared settings for the three test backends (YAML anchor, merged with <<: below).
-# backend/app.py only uses the standard library, so the stock Python image plus
-# the code mounted read-only is enough; no Dockerfile needed.
+# backend/Dockerfile is the stock Python image plus psutil (for the heartbeat
+# agent); the code is mounted read-only, so code edits need no rebuild.
 x-backend: &backend
-  image: python:3.11-slim
+  build: ./backend
+  image: adaptive-lb-backend
   working_dir: /app
   volumes:
     - ./backend:/app/backend:ro
@@ -13,6 +14,12 @@ x-backend: &backend
   # this Docker waits 10 s and then sends SIGKILL.)
   init: true
   restart: unless-stopped
+  # Heartbeats go to the LB running on the host. Docker Desktop provides the
+  # host.docker.internal name; on Linux this line maps it to the host gateway
+  # (there, set [heartbeat] host = "0.0.0.0" in lb.toml, since the datagrams
+  # arrive on the bridge interface rather than loopback).
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
 
 services:
   # Three backends with different artificial delays. They listen on 0.0.0.0
@@ -21,21 +28,27 @@ services:
   backend-fast:
     <<: *backend
     container_name: adaptive-lb-backend-fast
-    command: python -m backend.app --host 0.0.0.0 --port 9001 --name fast --delay-ms 20
+    command: >-
+      python -m backend.app --host 0.0.0.0 --port 9001 --name fast --delay-ms 20
+      --heartbeat host.docker.internal:9100 --advertise 127.0.0.1:9001
     ports:
       - "127.0.0.1:9001:9001"
 
   backend-medium:
     <<: *backend
     container_name: adaptive-lb-backend-medium
-    command: python -m backend.app --host 0.0.0.0 --port 9002 --name medium --delay-ms 60
+    command: >-
+      python -m backend.app --host 0.0.0.0 --port 9002 --name medium --delay-ms 60
+      --heartbeat host.docker.internal:9100 --advertise 127.0.0.1:9002
     ports:
       - "127.0.0.1:9002:9002"
 
   backend-slow:
     <<: *backend
     container_name: adaptive-lb-backend-slow
-    command: python -m backend.app --host 0.0.0.0 --port 9003 --name slow --delay-ms 150
+    command: >-
+      python -m backend.app --host 0.0.0.0 --port 9003 --name slow --delay-ms 150
+      --heartbeat host.docker.internal:9100 --advertise 127.0.0.1:9003
     ports:
       - "127.0.0.1:9003:9003"
 

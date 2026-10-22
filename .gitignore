@@ -14,6 +14,10 @@ experiments/results/*
 # ...except the measured benchmark reports that the docs cite
 !experiments/results/concurrency_benchmark.md
 !experiments/results/concurrency_benchmark.json
+!experiments/results/pooling_benchmark.md
+!experiments/results/pooling_benchmark.json
+!experiments/results/failover_demo.md
+!experiments/results/failover_demo.json
 
 # OS / editor
 .DS_Store

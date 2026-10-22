@@ -28,17 +28,26 @@ class BackendStats:
     active_connections: int
     total_requests: int
     avg_latency_ms: float | None  # None until the first request has finished
+    # Latest UDP heartbeat from the backend's agent (lb/heartbeat.py); None until one arrives.
+    cpu_percent: float | None = None
+    memory_percent: float | None = None
+    reported_connections: int | None = None  # in-flight requests as the backend counts them
+    heartbeat_at: float | None = None        # time.monotonic() when it was received
 
 
 class _Counters:
     """Mutable per-backend values. Only touched while holding the stats lock."""
 
-    __slots__ = ("active", "total", "avg_latency_ms")
+    __slots__ = ("active", "total", "avg_latency_ms", "cpu", "memory", "reported", "heartbeat_at")
 
     def __init__(self) -> None:
         self.active = 0
         self.total = 0
         self.avg_latency_ms: float | None = None
+        self.cpu: float | None = None
+        self.memory: float | None = None
+        self.reported: int | None = None
+        self.heartbeat_at: float | None = None
 
 
 class ServerStats:
@@ -70,6 +79,20 @@ class ServerStats:
                     LATENCY_EWMA_ALPHA * latency_ms + (1 - LATENCY_EWMA_ALPHA) * counters.avg_latency_ms
                 )
 
+    def record_heartbeat(self, backend: Backend, cpu_percent: float, memory_percent: float,
+                         active_connections: int, received_at: float) -> None:
+        with self._lock.write_locked():
+            counters = self._counters.setdefault(backend, _Counters())
+            counters.cpu = cpu_percent
+            counters.memory = memory_percent
+            counters.reported = active_connections
+            counters.heartbeat_at = received_at
+
+    def remove(self, backend: Backend) -> None:
+        """Forget a backend the admin API removed."""
+        with self._lock.write_locked():
+            self._counters.pop(backend, None)
+
     def get(self, backend: Backend) -> BackendStats:
         with self._lock.read_locked():
             return self._freeze(self._counters.get(backend, _Counters()))
@@ -81,4 +104,4 @@ class ServerStats:
 
     @staticmethod
     def _freeze(c: _Counters) -> BackendStats:
-        return BackendStats(c.active, c.total, c.avg_latency_ms)
+        return BackendStats(c.active, c.total, c.avg_latency_ms, c.cpu, c.memory, c.reported, c.heartbeat_at)

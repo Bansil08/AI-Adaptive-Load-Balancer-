@@ -136,6 +136,8 @@ def test_every_update_holds_the_write_lock_and_every_read_the_read_lock():
             object.__setattr__(self, "active", 0)
             object.__setattr__(self, "total", 0)
             object.__setattr__(self, "avg_latency_ms", None)
+            for name in ("cpu", "memory", "reported", "heartbeat_at"):
+                object.__setattr__(self, name, None)
 
         def __setattr__(self, name, value):
             seen_while_writing.append(spy.holding_write)
@@ -146,7 +148,8 @@ def test_every_update_holds_the_write_lock_and_every_read_the_read_lock():
     stats.request_finished(A, 10)
     stats.request_started(A)
     stats.request_finished(A, None)
+    stats.record_heartbeat(A, 10.0, 5.0, 2, 123.0)
     stats.get(A)
     stats.snapshot()
     assert seen_while_writing and all(seen_while_writing), "a counter changed without the write lock"
-    assert (spy.writes, spy.reads) == (4, 2)
+    assert (spy.writes, spy.reads) == (5, 2)

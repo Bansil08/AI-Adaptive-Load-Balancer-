@@ -3,6 +3,10 @@
 # Routing strategy. Phase 1: "round_robin".
 strategy = "round_robin"
 
+# Send each client IP to the same backend (rendezvous hashing) instead of
+# using the strategy. Only that client's backend going down moves it.
+sticky_sessions = false
+
 # Backend servers as "host:port". These match the three backends that
 # `docker compose up -d` starts (fast 20 ms, medium 60 ms, slow 150 ms).
 backends = [
@@ -25,3 +29,38 @@ backend_read = 30.0    # waiting for the backend's response; too slow -> 504
 workers = 32            # fixed thread pool size
 queue_size = 128        # accepted connections waiting for a free worker; when full, accept() pauses
 shutdown_timeout = 10.0 # seconds to let in-flight requests finish after SIGINT/SIGTERM
+
+[health]  # active probes: TCP connect, then GET /health must return 200
+interval = 2.0            # seconds between probe rounds
+timeout = 1.0             # per probe
+unhealthy_threshold = 2   # K consecutive failed probes -> backend DOWN
+healthy_threshold = 2     # M consecutive passed probes -> backend UP again
+path = "/health"
+
+[circuit_breaker]  # passive: watches real requests to each backend
+failure_threshold = 5     # consecutive failures (no answer, or 5xx) -> OPEN
+cooldown = 5.0            # seconds OPEN (no requests) before HALF_OPEN
+half_open_trials = 2      # trial requests in HALF_OPEN; all succeed -> CLOSED
+
+[pool]  # persistent keep-alive connections to backends
+size = 16                 # idle connections kept per backend; 0 = new connection per request
+idle_timeout = 30.0       # seconds; older idle connections are closed instead of reused
+
+[retries]  # GET and HEAD only; POST is never retried
+max_retries = 2           # extra attempts, each on a backend not tried yet
+backoff_base = 0.05       # seconds before the 1st retry; doubles each time
+backoff_max = 1.0
+
+[rate_limit]  # token bucket per client IP; empty bucket -> 429
+enabled = true
+rate = 100.0              # sustained requests/s per IP
+burst = 200.0             # bucket size
+
+[heartbeat]  # UDP metrics from backend agents (backend/app.py --heartbeat)
+host = "127.0.0.1"
+port = 9100               # 0 disables
+
+[admin]  # GET/POST /backends, DELETE /backends/host:port. No auth: keep it on loopback.
+host = "127.0.0.1"
+port = 8081               # 0 disables
+drain_timeout = 30.0      # max seconds a DELETE waits for in-flight requests

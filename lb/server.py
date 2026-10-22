@@ -14,8 +14,13 @@ CONCEPTS.md, "Deadlock prevention"). If one ever must, take them in this order
 and release in reverse:
     1. BoundedQueue._lock          (lb/bounded_queue.py)
     2. LoadBalancer._handlers_lock (this file)
-    3. ServerStats._lock           (lb/stats.py)
-    4. strategy locks              (lb/strategies/*)
+    3. Router._lock                (lb/router.py)
+    4. HealthChecker._states_lock  (lb/health.py)
+    5. CircuitBreaker._lock        (lb/circuit_breaker.py)
+    6. ServerStats._lock           (lb/stats.py)
+    7. ConnectionPool._lock        (lb/connection_pool.py)
+    8. RateLimiter._lock           (lb/rate_limiter.py)
+    9. strategy locks              (lb/strategies/*)
 A cycle "A waits for B while B waits for A" needs two threads to take the same
 locks in opposite orders; one global order makes that impossible.
 
@@ -32,8 +37,13 @@ import threading
 import time
 
 from lb import config
+from lb.admin import AdminServer
 from lb.bounded_queue import BoundedQueue, QueueClosed
-from lb.proxy import close_gracefully, error_response, handle_client
+from lb.connection_pool import ConnectionPool
+from lb.health import HealthChecker
+from lb.heartbeat import HeartbeatListener
+from lb.proxy import Proxy, close_gracefully, error_response
+from lb.rate_limiter import RateLimiter
 from lb.router import Router
 from lb.config import ConcurrencySettings, ProxySettings
 from lb.strategies import STRATEGIES
@@ -56,9 +66,12 @@ class LoadBalancer:
         settings: ProxySettings = ProxySettings(),
         concurrency: ConcurrencySettings = ConcurrencySettings(),
         thread_per_connection: bool = False,
+        proxy: Proxy | None = None,
     ):
         self.router = router
         self.settings = settings
+        # Default: Phase 2 behaviour (no pooling, retries or rate limit).
+        self.proxy = proxy or Proxy(router, settings)
         self.concurrency = concurrency
         self.thread_per_connection = thread_per_connection
         self._address = (host, port)
@@ -168,7 +181,7 @@ class LoadBalancer:
 
     def _serve(self, client_sock: socket.socket, client_addr: tuple) -> None:
         try:
-            handle_client(client_sock, client_addr, self.router, self.settings)
+            self.proxy.handle_client(client_sock, client_addr)
         except Exception:
             # A bug in one request must not kill the worker: with a fixed pool,
             # every dead worker permanently shrinks capacity.
@@ -251,9 +264,15 @@ def main() -> None:
         level=logging.WARNING if args.quiet else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(threadName)s: %(message)s",
     )
-    router = Router(cfg.backends, STRATEGIES[cfg.strategy]())
+    router = Router(cfg.backends, STRATEGIES[cfg.strategy](), cfg.breaker, cfg.sticky_sessions)
+    pool = ConnectionPool(cfg.pool, cfg.proxy.backend_connect_timeout)
+    proxy = Proxy(router, cfg.proxy, pool, cfg.retry,
+                  RateLimiter(cfg.rate_limit) if cfg.rate_limit.enabled else None)
     lb = LoadBalancer(router, cfg.host, args.port or cfg.port, cfg.proxy, cfg.concurrency,
-                      thread_per_connection=args.thread_per_connection)
+                      thread_per_connection=args.thread_per_connection, proxy=proxy)
+    health = HealthChecker(router, cfg.health)
+    heartbeat = HeartbeatListener(router, cfg.heartbeat.host, cfg.heartbeat.port) if cfg.heartbeat.port else None
+    admin = AdminServer(router, cfg.admin, health, pool) if cfg.admin.port else None
 
     def on_signal(signum, frame):
         lb.shutdown()
@@ -268,12 +287,28 @@ def main() -> None:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
-    host, port = lb.start()
+    try:
+        host, port = lb.start()
+        health.start()
+        if heartbeat:
+            log.info("heartbeats: UDP %s:%d", *heartbeat.start())
+        if admin:
+            log.info("admin API: http://%s:%d/backends", *admin.start())
+    except OSError as exc:  # e.g. a port already in use
+        parser.error(f"cannot start: {exc}")
     mode = "thread-per-connection" if args.thread_per_connection else (
         f"pool of {cfg.concurrency.workers} workers, queue {cfg.concurrency.queue_size}")
-    log.info("listening on %s:%d, strategy=%s, %s, backends=%s",
-             host, port, cfg.strategy, mode, ", ".join(map(str, cfg.backends)) or "(none)")
-    lb.serve_forever()
+    log.info("listening on %s:%d, strategy=%s%s, %s, backends=%s",
+             host, port, cfg.strategy, " (sticky)" if cfg.sticky_sessions else "", mode,
+             ", ".join(map(str, cfg.backends)) or "(none)")
+    try:
+        lb.serve_forever()
+    finally:
+        # After the drain: in-flight requests may still have needed the pool.
+        for component in (admin, heartbeat, health):
+            if component:
+                component.stop()
+        pool.close_all()
     log.info("stopped")
 
 

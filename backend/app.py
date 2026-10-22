@@ -1,11 +1,13 @@
 """Test backend HTTP server with configurable artificial delay and a /health endpoint.
 
 Run:  python -m backend.app --port 9001 --name fast --delay-ms 20
+      python -m backend.app --port 9001 --heartbeat 127.0.0.1:9100   # + UDP heartbeats to the LB
 """
 
 import argparse
 import json
 import random
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -25,6 +27,18 @@ class BackendServer(ThreadingHTTPServer):
         self.delay_ms = delay_ms
         self.jitter_ms = jitter_ms
         self.quiet = quiet
+        # Requests being handled right now, reported in heartbeats. Each request
+        # runs in its own thread, so the counter needs a lock (+= is not atomic).
+        self._in_flight = 0
+        self._in_flight_lock = threading.Lock()
+
+    def in_flight(self) -> int:
+        with self._in_flight_lock:
+            return self._in_flight
+
+    def _add_in_flight(self, delta: int) -> None:
+        with self._in_flight_lock:
+            self._in_flight += delta
 
 
 class BackendHandler(BaseHTTPRequestHandler):
@@ -42,6 +56,13 @@ class BackendHandler(BaseHTTPRequestHandler):
     do_POST = do_PUT = do_DELETE = do_PATCH = do_GET
 
     def _handle(self, send_body: bool = True) -> None:
+        self.server._add_in_flight(1)
+        try:
+            self._respond(send_body)
+        finally:
+            self.server._add_in_flight(-1)
+
+    def _respond(self, send_body: bool) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         request_body = self.rfile.read(length) if length else b""
 
@@ -85,16 +106,31 @@ def main() -> None:
     parser.add_argument("--delay-ms", type=float, default=0, help="fixed delay added to every request")
     parser.add_argument("--jitter-ms", type=float, default=0, help="extra random delay in [0, jitter]")
     parser.add_argument("--quiet", action="store_true", help="don't log each request")
+    parser.add_argument("--heartbeat", metavar="HOST:PORT",
+                        help="send UDP heartbeats (CPU, memory, active connections) to the LB here")
+    parser.add_argument("--advertise", metavar="HOST:PORT",
+                        help="address the LB knows this backend by (default: 127.0.0.1:<port>)")
     args = parser.parse_args()
 
     name = args.name or f"backend-{args.port}"
     server = BackendServer((args.host, args.port), name, args.delay_ms, args.jitter_ms, args.quiet)
     print(f"{name} listening on {args.host}:{args.port} (delay {args.delay_ms}ms + jitter {args.jitter_ms}ms)")
+    agent = None
+    if args.heartbeat:
+        # Imported here so a backend without --heartbeat doesn't need psutil.
+        from backend.agent import HeartbeatAgent
+        lb_host, _, lb_port = args.heartbeat.rpartition(":")
+        advertise = args.advertise or f"127.0.0.1:{args.port}"
+        agent = HeartbeatAgent((lb_host, int(lb_port)), advertise, server.in_flight)
+        agent.start()
+        print(f"{name} sending heartbeats to {args.heartbeat} as {advertise}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        if agent:
+            agent.stop()
         server.server_close()
 
 

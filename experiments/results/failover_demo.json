@@ -1,0 +1,492 @@
+[
+  {
+    "retries": 0,
+    "rows": [
+      {
+        "second": 0,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.1,
+        "a": 54,
+        "b": 54,
+        "c": 54,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 1,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.1,
+        "a": 53,
+        "b": 52,
+        "c": 52,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 2,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.1,
+        "a": 53,
+        "b": 54,
+        "c": 54,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 3,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.1,
+        "a": 54,
+        "b": 54,
+        "c": 54,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 4,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.1,
+        "a": 52,
+        "b": 52,
+        "c": 52,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 5,
+        "healthy": true,
+        "circuit": "open",
+        "hb_age_s": 1.0,
+        "a": 79,
+        "b": 0,
+        "c": 78,
+        "errors": 3,
+        "error_kinds": {
+          "HTTP 502": 3
+        }
+      },
+      {
+        "second": 6,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 2.0,
+        "a": 78,
+        "b": 0,
+        "c": 78,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 7,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 3.0,
+        "a": 79,
+        "b": 0,
+        "c": 78,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 8,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 4.0,
+        "a": 78,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 9,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 5.0,
+        "a": 80,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 10,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 6.0,
+        "a": 78,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 11,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 7.2,
+        "a": 80,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 12,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 8.0,
+        "a": 79,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 13,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 77,
+        "b": 5,
+        "c": 77,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 14,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 54,
+        "b": 53,
+        "c": 53,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 15,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 52,
+        "b": 53,
+        "c": 52,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 16,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 52,
+        "b": 52,
+        "c": 53,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 17,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 50,
+        "b": 50,
+        "c": 50,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 18,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 51,
+        "b": 51,
+        "c": 50,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 19,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 53,
+        "b": 53,
+        "c": 54,
+        "errors": 0,
+        "error_kinds": {}
+      }
+    ],
+    "events": [
+      [
+        5,
+        "SIGKILL backend b"
+      ],
+      [
+        12,
+        "restarted backend b"
+      ]
+    ],
+    "transitions": [
+      "backend 127.0.0.1:50741 is DOWN (2 consecutive failed checks; last: tcp: [Errno 61] Connection refused)",
+      "backend 127.0.0.1:50741 is UP (2 consecutive passed checks)"
+    ],
+    "total_ok": 3153,
+    "total_errors": 3,
+    "last_error_second": 5,
+    "victim_traffic_stopped_by": 5,
+    "victim_rejoined_at": 13
+  },
+  {
+    "retries": 2,
+    "rows": [
+      {
+        "second": 0,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.1,
+        "a": 55,
+        "b": 54,
+        "c": 54,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 1,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.1,
+        "a": 52,
+        "b": 53,
+        "c": 52,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 2,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.0,
+        "a": 54,
+        "b": 54,
+        "c": 54,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 3,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.0,
+        "a": 53,
+        "b": 52,
+        "c": 53,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 4,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.0,
+        "a": 54,
+        "b": 51,
+        "c": 54,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 5,
+        "healthy": true,
+        "circuit": "open",
+        "hb_age_s": 1.0,
+        "a": 75,
+        "b": 0,
+        "c": 77,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 6,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 2.0,
+        "a": 80,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 7,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 3.0,
+        "a": 79,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 8,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 4.0,
+        "a": 80,
+        "b": 0,
+        "c": 81,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 9,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 5.0,
+        "a": 79,
+        "b": 0,
+        "c": 78,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 10,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 6.0,
+        "a": 80,
+        "b": 0,
+        "c": 80,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 11,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 7.2,
+        "a": 79,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 12,
+        "healthy": false,
+        "circuit": "open",
+        "hb_age_s": 8.0,
+        "a": 78,
+        "b": 0,
+        "c": 79,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 13,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 79,
+        "b": 4,
+        "c": 77,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 14,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 52,
+        "b": 53,
+        "c": 53,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 15,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 53,
+        "b": 53,
+        "c": 53,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 16,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 52,
+        "b": 52,
+        "c": 51,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 17,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 53,
+        "b": 52,
+        "c": 53,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 18,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 52,
+        "b": 53,
+        "c": 53,
+        "errors": 0,
+        "error_kinds": {}
+      },
+      {
+        "second": 19,
+        "healthy": true,
+        "circuit": "closed",
+        "hb_age_s": 0.9,
+        "a": 53,
+        "b": 53,
+        "c": 52,
+        "errors": 0,
+        "error_kinds": {}
+      }
+    ],
+    "events": [
+      [
+        5,
+        "SIGKILL backend b"
+      ],
+      [
+        12,
+        "restarted backend b"
+      ]
+    ],
+    "transitions": [
+      "backend 127.0.0.1:54594 is DOWN (2 consecutive failed checks; last: tcp: [Errno 61] Connection refused)",
+      "backend 127.0.0.1:54594 is UP (2 consecutive passed checks)"
+    ],
+    "total_ok": 3167,
+    "total_errors": 0,
+    "last_error_second": null,
+    "victim_traffic_stopped_by": 5,
+    "victim_rejoined_at": 13
+  }
+]
