@@ -4,10 +4,17 @@
                                     pool and DB writer counters (the dashboard polls this)
   POST   /backends                  add one; body {"address": "127.0.0.1:9004"}
   DELETE /backends/127.0.0.1:9004   drain (wait for its in-flight requests), then remove
+  GET    /strategy                  the active strategy and the ones available
+  POST   /strategy                  switch at runtime; body {"strategy": "ml_latency"}
+
+Requests that change something (POST, DELETE) must carry the header
+"X-Admin-Token: <token>" when a token is configured (the ADMIN_TOKEN
+environment variable; lb/server.py passes it in). Reads stay open.
 
 A separate port keeps admin traffic out of the client path and lets it be
-firewalled separately. It binds to loopback by default because there is no
-authentication: anyone who can reach it can remove every backend.
+firewalled separately. It binds to loopback by default; when it has to listen
+more widely (the LB in a Docker container, reached by the dashboard container),
+set a token, or anyone who can reach it could remove every backend.
 
 Each admin connection gets its own short-lived thread rather than a pool
 worker: admin traffic is tiny, and a DELETE can block for up to drain_timeout
@@ -17,13 +24,14 @@ A backend added here starts DOWN and joins once it passes `healthy_threshold`
 health checks in a row, so traffic never goes to a server that isn't ready.
 """
 
+import hmac
 import json
 import logging
 import socket
 import threading
 import time
 from http import HTTPStatus
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from lb.config import AdminSettings
 from lb.connection_pool import ConnectionPool
@@ -31,7 +39,7 @@ from lb.health import HealthChecker
 from lb.http_parser import Headers, HTTPResponse, ParseError, SocketReader, read_request
 from lb.proxy import close_gracefully
 from lb.router import Router
-from lb.strategies.base import Backend
+from lb.strategies.base import Backend, LoadBalancingStrategy
 
 if TYPE_CHECKING:
     from lb.db_writer import DBWriter
@@ -56,8 +64,12 @@ def json_response(status: int, payload) -> bytes:
 class AdminServer:
     def __init__(self, router: Router, settings: AdminSettings = AdminSettings(),
                  health: HealthChecker | None = None, pool: ConnectionPool | None = None,
-                 db: "DBWriter | None" = None):
+                 db: "DBWriter | None" = None, token: str = "",
+                 strategies: dict[str, Callable[[], LoadBalancingStrategy]] | None = None):
         self.router = router
+        self.token = token
+        # Name -> function building that strategy from the LB's config (lb/server.py).
+        self.strategies = strategies or {}
         self.db = db
         self.settings = settings
         self.health = health
@@ -107,7 +119,8 @@ class AdminServer:
                 return
             if request is None:
                 return
-            status, payload = self.dispatch(request.method, request.target, request.body)
+            status, payload = self.dispatch(request.method, request.target, request.body,
+                                            request.headers.get("x-admin-token") or "")
             conn.sendall(json_response(status, payload))
         except OSError as exc:
             log.debug("admin connection error: %s", exc)
@@ -118,8 +131,18 @@ class AdminServer:
 
     # --- routing of admin requests (pure: easy to unit-test without sockets) ---------
 
-    def dispatch(self, method: str, target: str, body: bytes) -> tuple[int, dict]:
+    def dispatch(self, method: str, target: str, body: bytes, token: str = "") -> tuple[int, dict]:
         path = target.split("?", 1)[0].rstrip("/")
+        # compare_digest: constant time, so the token can't be guessed character by character.
+        if method not in ("GET", "HEAD") and self.token and not hmac.compare_digest(token.encode(),
+                                                                                    self.token.encode()):
+            return 403, {"error": "missing or wrong X-Admin-Token"}
+        if path == "/strategy":
+            if method == "GET":
+                return 200, {"strategy": self.router.strategy.name, "available": sorted(self.strategies)}
+            if method == "POST":
+                return self.set_strategy(body)
+            return 405, {"error": "use GET or POST on /strategy"}
         if path == "/backends":
             if method == "GET":
                 strategy = self.router.strategy
@@ -139,7 +162,26 @@ class AdminServer:
             if method == "DELETE":
                 return self.remove_backend(path[len("/backends/"):])
             return 405, {"error": "use DELETE on /backends/<host:port>"}
-        return 404, {"error": "not found; try GET /backends"}
+        return 404, {"error": "not found; try GET /backends or GET /strategy"}
+
+    def set_strategy(self, body: bytes) -> tuple[int, dict]:
+        try:
+            name = json.loads(body or b"{}")["strategy"]
+        except (ValueError, KeyError, TypeError):
+            return 400, {"error": 'body must be JSON like {"strategy": "least_connections"}'}
+        if name not in self.strategies:
+            return 400, {"error": f"unknown strategy {name!r}; choose from {sorted(self.strategies)}"}
+        previous = self.router.strategy.name
+        # Built (the ML model loaded from disk) BEFORE the switch, on this admin
+        # thread, so routing never waits for it; if building fails, nothing changes.
+        try:
+            strategy = self.strategies[name]()
+        except Exception as exc:
+            log.exception("admin: cannot build strategy %s", name)
+            return 500, {"error": f"cannot build {name}: {exc}"}
+        self.router.set_strategy(strategy)
+        log.warning("admin: strategy %s -> %s", previous, name)
+        return 200, {"strategy": name, "previous": previous}
 
     def list_backends(self) -> list[dict]:
         stats = self.router.stats.snapshot()

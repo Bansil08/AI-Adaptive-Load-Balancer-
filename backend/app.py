@@ -9,19 +9,30 @@ a server with N worker threads. Without it a sleep()-based backend has
 unlimited capacity: more traffic never makes it slower, so a traffic spike or
 an overloaded server could not be simulated.
 
---allow-control: enables POST /control {"delay_ms": 300} to change the delay at
-runtime (the sudden-slowdown scenario). Off by default, because requests reach
-backends THROUGH the load balancer: with it on, any client could slow a
-backend down.
+--allow-control: enables two runtime controls, both off by default, because
+requests reach backends THROUGH the load balancer: with them on, any client
+could slow a backend down or take it out.
+  POST /control {"delay_ms": 300}             set the delay (the experiments' sudden slowdown)
+  POST /fault   {"type": "slow", "ms": 150}   fault injection for the live demo (dashboard):
+                {"type": "crash"}             stop answering: every connection is closed
+                                              without a response, /health included
+                {"type": "restore"}           back to the start-up delay, answering again
+  GET  /fault                                 the current fault
+With --control-token (or the ADMIN_TOKEN environment variable) set, a POST
+must also carry the header "X-Admin-Token: <token>".
 """
 
 import argparse
+import hmac
 import json
+import os
 import random
 import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+FAULT_TYPES = ("slow", "crash", "restore")
 
 
 class BackendServer(ThreadingHTTPServer):
@@ -34,11 +45,17 @@ class BackendServer(ThreadingHTTPServer):
     request_queue_size = 128
 
     def __init__(self, address, name: str, delay_ms: float = 0, jitter_ms: float = 0, quiet: bool = False,
-                 capacity: int = 0, allow_control: bool = False, seed: int | None = None):
+                 capacity: int = 0, allow_control: bool = False, seed: int | None = None,
+                 control_token: str = ""):
         super().__init__(address, BackendHandler)
         self.name = name
         self.delay_ms = delay_ms
         self.jitter_ms = jitter_ms
+        # Start-up values, so "restore" undoes any injected fault.
+        self.base_delay_ms = delay_ms
+        self.base_jitter_ms = jitter_ms
+        self.fault = "none"       # "none", "slow" or "crash" (one attribute store: atomic under the GIL)
+        self.control_token = control_token
         self.quiet = quiet
         self.allow_control = allow_control
         self.capacity = capacity
@@ -102,6 +119,12 @@ class BackendHandler(BaseHTTPRequestHandler):
     do_POST = do_PUT = do_DELETE = do_PATCH = do_GET
 
     def _handle(self, send_body: bool = True) -> None:
+        if self.server.fault == "crash" and self.path != "/fault":
+            # A crashed server: close without answering (the LB sees no response,
+            # like a process that died mid-request). /fault stays reachable so the
+            # dashboard can restore it.
+            self.close_connection = True
+            return
         self.server._add_in_flight(1)
         try:
             self._respond(send_body)
@@ -119,6 +142,8 @@ class BackendHandler(BaseHTTPRequestHandler):
             payload = {"status": "ok", "server": self.server.name}
         elif self.path == "/control" and self.command == "POST":
             status, payload = self._control(request_body)
+        elif self.path == "/fault":
+            status, payload = self._fault(request_body)
         else:
             # sleep() simulates I/O-bound latency (e.g. waiting on a database);
             # --capacity adds queueing once N requests are already being worked on.
@@ -141,9 +166,46 @@ class BackendHandler(BaseHTTPRequestHandler):
         if send_body:
             self.wfile.write(body)
 
-    def _control(self, request_body: bytes) -> tuple[int, dict]:
+    def _authorised(self) -> tuple[int, dict] | None:
+        """None if this control request may proceed, else the error response."""
         if not self.server.allow_control:
-            return 404, {"error": "control endpoint disabled (start with --allow-control)"}
+            return 404, {"error": "control endpoints disabled (start with --allow-control)"}
+        token = self.server.control_token
+        # compare_digest takes the same time however many leading characters
+        # match, so the token can't be guessed one character at a time.
+        if token and not hmac.compare_digest(self.headers.get("X-Admin-Token", "").encode(), token.encode()):
+            return 403, {"error": "missing or wrong X-Admin-Token"}
+        return None
+
+    def _fault(self, request_body: bytes) -> tuple[int, dict]:
+        server = self.server
+        if self.command != "GET":
+            if (refused := self._authorised()) is not None:
+                return refused
+            try:
+                change = json.loads(request_body or b"{}")
+                kind = change.get("type") if isinstance(change, dict) else None
+                if kind not in FAULT_TYPES:
+                    raise ValueError(f'body must be {{"type": one of {list(FAULT_TYPES)}}}')
+                if kind == "slow":
+                    ms = float(change.get("ms", 150))
+                    if not 0 < ms <= 60_000:
+                        raise ValueError("ms out of range")
+                    server.delay_ms = server.base_delay_ms + ms
+                    server.fault = "slow"
+                elif kind == "crash":
+                    server.fault = "crash"
+                else:
+                    server.delay_ms, server.jitter_ms = server.base_delay_ms, server.base_jitter_ms
+                    server.fault = "none"
+            except (ValueError, TypeError) as exc:
+                return 400, {"error": str(exc)}
+        return 200, {"server": server.name, "fault": server.fault, "delay_ms": server.delay_ms,
+                     "base_delay_ms": server.base_delay_ms}
+
+    def _control(self, request_body: bytes) -> tuple[int, dict]:
+        if (refused := self._authorised()) is not None:
+            return refused
         try:
             changes = json.loads(request_body or b"{}")
             if not isinstance(changes, dict):
@@ -175,28 +237,33 @@ def main() -> None:
     parser.add_argument("--capacity", type=int, default=0,
                         help="max requests processed at once; the rest wait (0 = unlimited)")
     parser.add_argument("--allow-control", action="store_true",
-                        help="enable POST /control to change the delay at runtime (experiments only)")
+                        help="enable POST /control and /fault to change the delay or inject a fault at runtime")
+    parser.add_argument("--control-token", default=os.environ.get("ADMIN_TOKEN", ""),
+                        help="require this X-Admin-Token on control requests (default: $ADMIN_TOKEN)")
     parser.add_argument("--seed", type=int, help="seed for the jitter, for repeatable experiments")
-    parser.add_argument("--heartbeat", metavar="HOST:PORT",
-                        help="send UDP heartbeats (CPU, memory, active connections) to the LB here")
+    parser.add_argument("--heartbeat", metavar="HOST:PORT[=ADVERTISE]", action="append", default=[],
+                        help="send UDP heartbeats (CPU, memory, active connections) to an LB here; repeatable. "
+                             "=ADVERTISE: the address that LB knows this backend by (default: --advertise)")
     parser.add_argument("--advertise", metavar="HOST:PORT",
                         help="address the LB knows this backend by (default: 127.0.0.1:<port>)")
     args = parser.parse_args()
 
     name = args.name or f"backend-{args.port}"
     server = BackendServer((args.host, args.port), name, args.delay_ms, args.jitter_ms, args.quiet,
-                           capacity=args.capacity, allow_control=args.allow_control, seed=args.seed)
+                           capacity=args.capacity, allow_control=args.allow_control, seed=args.seed,
+                           control_token=args.control_token)
     print(f"{name} listening on {args.host}:{args.port} (delay {args.delay_ms}ms + jitter {args.jitter_ms}ms"
           f"{f', capacity {args.capacity}' if args.capacity else ''})")
     agent = None
     if args.heartbeat:
         # Imported here so a backend without --heartbeat doesn't need psutil.
-        from backend.agent import HeartbeatAgent
-        lb_host, _, lb_port = args.heartbeat.rpartition(":")
-        advertise = args.advertise or f"127.0.0.1:{args.port}"
-        agent = HeartbeatAgent((lb_host, int(lb_port)), advertise, server.in_flight)
+        from backend.agent import HeartbeatAgent, parse_target
+        default_advertise = args.advertise or f"127.0.0.1:{args.port}"
+        targets = [parse_target(text, default_advertise) for text in args.heartbeat]
+        agent = HeartbeatAgent(targets, server.in_flight)
         agent.start()
-        print(f"{name} sending heartbeats to {args.heartbeat} as {advertise}")
+        for (lb_host, lb_port), advertise in targets:
+            print(f"{name} sending heartbeats to {lb_host}:{lb_port} as {advertise}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

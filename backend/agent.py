@@ -9,6 +9,10 @@ for every backend and tell the load balancer nothing. psutil's process CPU %
 is relative to one core (it can exceed 100 on a multi-core machine), so it is
 divided by the core count to give a 0-100 share of the machine.
 
+An agent can report to several load balancers, each knowing the backend by
+its own address: in Docker Compose the LB container reaches it as
+backend-fast:9001, an LB run on the host as 127.0.0.1:9001.
+
 See lb/heartbeat.py for the datagram format and why this is UDP.
 """
 
@@ -21,16 +25,26 @@ from typing import Callable
 import psutil
 
 
+Target = tuple[tuple[str, int], str]  # ((LB host, LB UDP port), "host:port" that LB knows us by)
+
+
+def parse_target(text: str, default_advertise: str) -> Target:
+    """'lb:9100' or 'lb:9100=backend-fast:9001' -> (('lb', 9100), advertised address)."""
+    address, _, advertise = text.partition("=")
+    host, sep, port = address.rpartition(":")
+    if not sep or not host or not port.isdigit():
+        raise ValueError(f"expected HOST:PORT[=ADVERTISE], got {text!r}")
+    return (host, int(port)), advertise or default_advertise
+
+
 class HeartbeatAgent:
     def __init__(
         self,
-        lb_address: tuple[str, int],
-        advertise: str,                      # "host:port" the LB knows this backend by
+        targets: list[Target],
         active_connections: Callable[[], int],
         interval: float = 1.0,
     ):
-        self.lb_address = lb_address
-        self.advertise = advertise
+        self.targets = targets
         self.active_connections = active_connections
         self.interval = interval
         self.started_at = time.time()  # lets the LB tell a restarted agent from a replayed packet
@@ -50,17 +64,21 @@ class HeartbeatAgent:
         self._stop.set()
         self._thread.join(self.interval + 1)
 
-    def build(self) -> bytes:
+    def measure(self) -> dict:
+        """One reading, shared by every target (cpu_percent() resets its baseline when called)."""
         self.seq += 1
         cpu = min(100.0, self._process.cpu_percent(None) / self._cpu_count)
-        return json.dumps({
-            "backend": self.advertise,
+        return {
             "started_at": self.started_at,
             "seq": self.seq,
             "cpu_percent": round(cpu, 2),
             "memory_percent": round(self._process.memory_percent(), 2),
             "active_connections": self.active_connections(),
-        }).encode()
+        }
+
+    @staticmethod
+    def build(reading: dict, advertise: str) -> bytes:
+        return json.dumps({"backend": advertise, **reading}).encode()
 
     def _run(self) -> None:
         # One unconnected UDP socket: sendto() just hands a datagram to the
@@ -68,9 +86,12 @@ class HeartbeatAgent:
         # (the datagram is simply lost, which is fine for heartbeats).
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             while not self._stop.wait(self.interval):
-                try:
-                    sock.sendto(self.build(), self.lb_address)
-                except OSError:
-                    # e.g. ECONNREFUSED reported from an earlier ICMP "port
-                    # unreachable" while the LB is down. Keep sending.
-                    pass
+                reading = self.measure()
+                for address, advertise in self.targets:
+                    try:
+                        sock.sendto(self.build(reading, advertise), address)
+                    except OSError:
+                        # e.g. ECONNREFUSED reported from an earlier ICMP "port
+                        # unreachable" while that LB is down, or a name that
+                        # doesn't resolve (no LB container). Keep sending.
+                        pass

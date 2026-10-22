@@ -54,14 +54,15 @@ backoff_max = 1.0
 
 [rate_limit]  # token bucket per client IP; empty bucket -> 429
 enabled = true
-rate = 100.0              # sustained requests/s per IP
-burst = 200.0             # bucket size
+rate = 200.0              # sustained requests/s per IP (above the dashboard's 120 req/s demo load)
+burst = 400.0             # bucket size
 
 [heartbeat]  # UDP metrics from backend agents (backend/app.py --heartbeat)
 host = "127.0.0.1"
 port = 9100               # 0 disables
 
-[admin]  # GET/POST /backends, DELETE /backends/host:port. No auth: keep it on loopback.
+[admin]  # GET/POST /backends, DELETE /backends/host:port, GET/POST /strategy. Changes need X-Admin-Token
+         # when ADMIN_TOKEN is set (it is, in .env); keep it on loopback either way.
 host = "127.0.0.1"
 port = 8081               # 0 disables
 drain_timeout = 30.0      # max seconds a DELETE waits for in-flight requests

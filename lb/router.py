@@ -116,6 +116,17 @@ class Router:
     def backends(self) -> tuple[Backend, ...]:
         return self._backends
 
+    def set_strategy(self, strategy: LoadBalancingStrategy) -> None:
+        """Switch routing strategy at runtime (admin API / dashboard).
+
+        No lock needed: the new strategy is fully built and attached to the
+        stats first, then published with one attribute assignment, which is
+        atomic in CPython. A request that already read the old strategy just
+        finishes with it (its observe() may go to the old one: harmless).
+        """
+        strategy.attach(self.stats)
+        self.strategy = strategy
+
     # --- choosing ---------------------------------------------------------------
 
     def choose(self, request: "HTTPRequest", client_ip: str = "",

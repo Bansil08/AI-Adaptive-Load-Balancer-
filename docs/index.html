@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>adaptive-lb results</title>
+  <meta name="description" content="An HTTP load balancer from raw sockets, comparing round robin, least connections, ML latency prediction and a bandit across 80 measured runs.">
+  <!-- The live dashboard's own stylesheet and results code, copied here by
+       experiments/export_static.py, so this page draws exactly the same charts. -->
+  <link rel="stylesheet" href="assets/dashboard.css">
+  <style>
+    .lede { max-width: 760px; color: var(--ink-2); margin: 4px 0 0; }
+    .links { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; }
+    .links a { color: var(--ink); }
+    .prose > p, .prose > ul, .prose > div:not(.diagram) { max-width: 820px; }
+    .prose p, .prose li { color: var(--ink-2); }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 10px; margin: 12px 0; }
+    .fact { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .fact strong { display: block; font-size: 20px; color: var(--ink); }
+    .fact span { font-size: 12px; color: var(--muted); }
+    .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+               overflow-x: auto; text-align: center; }
+    .diagram svg { max-width: 100% !important; height: auto; }
+    .demo img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 10px; }
+    footer { max-width: 1200px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 12px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>adaptive-lb</h1>
+  <p class="lede">An HTTP load balancer written from raw sockets and threads in Python, with health checks, circuit
+    breakers and retries, comparing four routing strategies (round robin, least connections, an ML latency model
+    and a multi-armed bandit) across controlled, repeated experiments. Every number below was measured.</p>
+  <div class="links">
+    <a id="repo-link" href="https://github.com/Bansil08/AI-Adaptive-Load-Balancer-">Source code on GitHub</a>
+    <a id="video-link" href="#" hidden>Demo video</a>
+    <a href="#demo">Live demo (GIF)</a>
+    <a href="#methodology">Methodology</a>
+  </div>
+  <p id="error" class="error" role="alert" hidden></p>
+
+  <section id="headline" class="banner" hidden>
+    <p class="banner-kicker">Headline result</p>
+    <p id="headline-text" class="banner-text"></p>
+    <div id="winner-cards" class="cards"></div>
+  </section>
+</header>
+
+<main>
+  <section>
+    <h2>Results by scenario</h2>
+    <p class="muted">p95 latency per strategy, mean of the runs; hover a bar for ± standard deviation and min–max.</p>
+    <div id="experiment-charts" class="grid4"></div>
+    <div class="table-wrap"><table id="experiments">
+      <thead><tr>
+        <th>Scenario</th><th>Strategy</th><th class="num">Runs</th><th class="num">p95 latency (ms)</th>
+        <th class="num">Avg latency (ms)</th><th class="num">Error rate</th><th class="num">Throughput (req/s)</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section id="demo" class="demo">
+    <h2>Live demo</h2>
+    <p class="muted">The dashboard under load: a backend is slowed by 150 ms (round robin keeps sending it a third of
+      the traffic), the strategy is switched to ML latency (traffic moves away within seconds), then the fast
+      backend is crashed (circuit breaker opens, retries keep clients error-free) and restored.</p>
+    <img src="demo.gif" alt="Dashboard recording: slowing a backend, switching to ML routing, crashing and restoring a backend" loading="lazy">
+  </section>
+
+  <section class="prose">
+    <h2>How it works</h2>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TD
+  C["Clients"] -->|"TCP :8080"| L["Listener thread"]
+  L --> Q[["Bounded queue"]] --> W["Worker thread pool"]
+  W --> RT["Router<br/>healthy, breaker-closed backends"]
+  HC["Health checks<br/>+ circuit breaker"] -.-> RT
+  RT --> S["Strategy<br/>round robin · least conn. · ML latency · bandit"]
+  HB["Live stats<br/>in-flight, latency, UDP heartbeats"] -.-> S
+  M[("Latency model<br/>trained offline")] -.-> S
+  S --> P["Proxy<br/>pooled connections, timeouts, GET retries"]
+  P --> B1["Backend fast"] & B2["Backend medium"] & B3["Backend slow"]
+  W --> DB[("PostgreSQL<br/>request log")]
+  DB -.-> M
+      </pre>
+    </div>
+    <ul>
+      <li><strong>Concurrency:</strong> a listener thread accepts TCP connections into a bounded queue; a fixed pool
+        of worker threads serves them (producer-consumer with condition variables), so overload costs latency,
+        not unbounded threads.</li>
+      <li><strong>Reliability:</strong> active health checks (TCP + <code>GET /health</code>), a circuit breaker per
+        backend fed by real requests, retries of idempotent requests on another backend with exponential backoff,
+        and token-bucket rate limiting.</li>
+      <li><strong>Strategies:</strong> round robin rotates; least connections picks the fewest requests in flight;
+        <em>ML latency</em> predicts each backend's response time with a linear model (in-flight requests, CPU,
+        memory, recent latency) trained offline on earlier runs; the <em>bandit</em> is epsilon-greedy over each
+        backend's last 50 latencies. Both ML strategies fall back to least connections when they can't decide
+        within 2 ms.</li>
+      <li><strong>Logging:</strong> every request goes to PostgreSQL through one writer thread in batched
+        transactions; results are computed in SQL.</li>
+    </ul>
+  </section>
+
+  <section id="methodology" class="prose">
+    <h2>Methodology</h2>
+    <div class="facts" id="facts"></div>
+    <ul>
+      <li>Every run starts fresh backend processes and a fresh load balancer, so no state carries over.</li>
+      <li>Load is <strong>open-loop</strong>: requests are sent on a Poisson schedule whether or not earlier ones have
+        answered, so a slow server shows up as latency instead of quietly reducing the load.</li>
+      <li>Every strategy gets the same random seeds, so it sees the identical sequence of arrivals. The seeds differ
+        from those of the runs the ML model was trained on.</li>
+      <li>Each cell is reported as the mean ± standard deviation over the runs, with the min–max range. A "winner" is
+        only named when its p95 beats the others by more than that spread; otherwise the card says it's a tie.</li>
+      <li>Retries were off during the experiments, so errors show what the routing did. Each run's request log was
+        cross-checked against the load generator's own count.</li>
+      <li>Limitations: one laptop, synthetic backends with artificial delays, and a single (not replicated) load
+        balancer. The model was trained on earlier runs of the same scenarios, so this is its best case.</li>
+    </ul>
+    <div id="scenario-list"></div>
+  </section>
+</main>
+<footer>Batch <span id="batch-name">–</span>, exported <span id="exported-at">–</span> by
+  <code>python -m experiments.export_static</code>.</footer>
+
+<script src="assets/results.js"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({startOnLoad: true, theme: dark ? "dark" : "neutral"});
+</script>
+<script>
+  "use strict";
+  function fact(value, label) {
+    const node = el("div", "fact");
+    node.append(el("strong", null, value), el("span", null, label));
+    return node;
+  }
+  fetch("data/results.json", {cache: "no-store"})
+    .then(resp => { if (!resp.ok) throw new Error(`data/results.json: HTTP ${resp.status}`); return resp.json(); })
+    .then(data => {
+      if (typeof Chart === "undefined") throw new Error("Chart.js could not be loaded (offline?).");
+      applyChartDefaults();
+      drawResults(data);
+      const m = data.methodology;
+      $("#facts").append(
+        fact(String(m.runs), "runs"),
+        fact(`${m.strategies} × ${m.scenarios}`, "strategies × scenarios"),
+        fact(String(m.repeats), "runs per cell"),
+        fact(`${m.duration_s} s`, "per run"),
+        fact(m.requests.toLocaleString("en"), "requests logged"),
+        fact(`${m.cross_checked} / ${m.runs}`, "runs cross-checked exactly"),
+      );
+      for (const [name, text] of Object.entries(m.scenario_descriptions)) {
+        const p = el("p");
+        p.append(el("strong", null, name.replaceAll("_", " ") + ": "), document.createTextNode(text));
+        $("#scenario-list").append(p);
+      }
+      $("#batch-name").textContent = data.batch;
+      $("#exported-at").textContent = data.exported_at;
+      if (data.links.video) {
+        $("#video-link").href = data.links.video;
+        $("#video-link").hidden = false;
+      }
+    })
+    .catch(err => { $("#error").textContent = err.message; $("#error").hidden = false; });
+</script>
+</body>
+</html>

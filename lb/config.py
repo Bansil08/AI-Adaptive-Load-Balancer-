@@ -24,7 +24,7 @@ def database_url() -> str:
     # can't be misread as part of the host or port (as it would in a URL).
     return make_conninfo(
         user=os.environ.get("POSTGRES_USER", "adaptive_lb"),
-        password=os.environ.get("POSTGRES_PASSWORD", ""),
+        password=os.environ.get("POSTGRES_PASSWORD", "adaptive_lb_dev"),  # docker-compose.yml's default
         host=os.environ.get("POSTGRES_HOST", "localhost"),
         port=os.environ.get("POSTGRES_PORT", "5433"),
         dbname=os.environ.get("POSTGRES_DB", "adaptive_lb"),

@@ -104,3 +104,16 @@ def test_database_down_is_a_503_not_a_crash(monkeypatch):
     monkeypatch.setattr(dashboard, "database_url", lambda: "host=127.0.0.1 port=1 dbname=x connect_timeout=1")
     resp = dashboard.app.test_client().get("/api/summary")
     assert resp.status_code == 503 and "database unreachable" in resp.get_json()["error"]
+
+
+def test_an_empty_database_shows_the_committed_results(client, tmp_path, monkeypatch):
+    # A fresh clone: no experiment batches yet, so the committed final batch is shown, labelled as such.
+    committed = {"batch": "comparison-x", "cells": [], "headline": {"text": "h"}, "cards": [], "methodology": {}}
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(committed))
+    monkeypatch.setattr(dashboard, "STATIC_RESULTS", path)
+    data = client.get("/api/experiments").get_json()
+    assert data == {"batch": "comparison-x", "cells": [], "headline": {"text": "h"}, "cards": [],
+                    "source": "docs/data/results.json"}
+    monkeypatch.setattr(dashboard, "STATIC_RESULTS", tmp_path / "missing.json")
+    assert client.get("/api/experiments").get_json()["batch"] is None

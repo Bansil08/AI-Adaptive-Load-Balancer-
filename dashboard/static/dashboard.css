@@ -63,8 +63,8 @@ select { font: inherit; color: var(--ink); background: var(--surface); border: 1
 figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 figcaption { font-weight: 600; margin-bottom: 8px; }
 .chart { position: relative; height: 240px; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; }
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; margin-bottom: 16px; }
 .grid4 .chart { height: 200px; }
 
 /* Wide tables scroll sideways inside their box, never the whole page. */
@@ -81,3 +81,47 @@ tr.group-start td { border-top: 2px solid var(--grid); }
 .state.good::before { background: var(--good); }
 .state.warning::before { background: var(--warning); }
 .state.critical::before { background: var(--critical); }
+
+/* --- headline banner + winner cards ------------------------------------------------ */
+.banner { margin: 16px 0 0; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border);
+          border-radius: 10px; }
+.banner-kicker { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.banner-text { margin: 4px 0 12px; font-size: 18px; font-weight: 650; line-height: 1.35; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; }
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--page); }
+.card-scenario { font-size: 12px; color: var(--muted); }
+.card-scenario::first-letter { text-transform: uppercase; }
+.card-winner { margin: 4px 0; font-weight: 600; }
+.card-numbers { font-size: 13px; }
+.tie { font-weight: 600; }
+
+/* A strategy or backend name always carries its colour swatch AND its text. */
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px;
+          vertical-align: -1px; background: transparent; }
+.badge { white-space: nowrap; }
+
+/* --- controls ----------------------------------------------------------------------- */
+.controls { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: flex-start; padding: 12px 16px;
+            background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.control { display: flex; flex-direction: column; gap: 6px; }
+.control > label, .control-label { font-weight: 600; font-size: 13px; }
+.control-help { flex-basis: 100%; margin: 0; }
+.inline { display: flex; align-items: center; }
+.small { font-size: 12px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; font-size: 13px; color: var(--ink); background: var(--page); border: 1px solid var(--border);
+         border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--ink-2); }
+button:disabled { cursor: default; opacity: .45; }
+button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; opacity: 1; }
+button.danger[aria-pressed="true"] { border-color: var(--critical); color: var(--critical); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+
+/* --- result charts -------------------------------------------------------------------- */
+.figure-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.figure-head figcaption { margin-bottom: 8px; }
+.hint { margin-left: 8px; font-weight: 400; font-size: 12px; color: var(--muted); }
+.hint::before { content: "↓ "; }
+button.toggle { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
+.note { margin: 8px 0 0; font-size: 12px; line-height: 1.4; color: var(--ink-2); }
+.figure-head .hint { display: block; margin: 2px 0 0; }

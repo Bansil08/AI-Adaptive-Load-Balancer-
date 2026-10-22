@@ -1,62 +1,40 @@
-// Polls the Flask JSON endpoints and redraws. No framework: fetch + Chart.js.
+// Live dashboard: polls the Flask JSON endpoints, redraws, and sends the controls.
+// Uses the helpers and the results drawing from results.js (loaded first).
 "use strict";
 
 const REFRESH_SECONDS = 3;          // live panels
 const EXPERIMENT_REFRESH_SECONDS = 30;
 const HEARTBEAT_STALE_S = 3;        // as MAX_HEARTBEAT_AGE_S in lb/strategies/ml_latency.py
-const STRATEGIES = ["round_robin", "least_connections", "ml_latency", "bandit"];
-const STRATEGY_LABELS = {round_robin: "Round robin", least_connections: "Least connections",
-                         ml_latency: "ML latency", bandit: "Bandit"};
-// Two-line tick labels: four full names don't fit under a ~250 px chart.
-const TICK_LABELS = {round_robin: ["Round", "robin"], least_connections: ["Least", "conn."],
-                     ml_latency: ["ML", "latency"], bandit: ["Bandit"]};
+const BUCKET_S = 5;                 // the dashboard_live_traffic view's bucket size
 
-const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const $ = sel => document.querySelector(sel);
-
-// Colour follows the entity, never its rank: a backend keeps the slot it got
-// when first seen, and strategies always use slots 1-4 (as in the PNG charts).
+// Backends use palette slots 5-7 (strategies have 1-4). A backend keeps the
+// slot it got when first seen: colour follows the entity, never its rank.
+const BACKEND_SLOTS = [5, 6, 7];
 const backendSlots = new Map();
 function backendColor(name) {
-  if (!backendSlots.has(name)) backendSlots.set(name, backendSlots.size + 1);
-  const slot = backendSlots.get(name);
-  return slot <= 8 ? css(`--s${slot}`) : css("--muted");
+  if (!backendSlots.has(name)) backendSlots.set(name, backendSlots.size);
+  const i = backendSlots.get(name);
+  return i < BACKEND_SLOTS.length ? css(`--s${BACKEND_SLOTS[i]}`) : css("--muted");
 }
-const strategyColor = name => css(`--s${STRATEGIES.indexOf(name) + 1}`) || css("--muted");
 
-// Build table cells with textContent only: server names come from the network.
-function cell(text, className) {
-  const td = document.createElement("td");
-  td.textContent = text;
-  if (className) td.className = className;
-  return td;
-}
 function stateCell(text, level) {
-  const td = cell(text);
-  const span = document.createElement("span");
-  span.className = `state ${level}`;
-  span.textContent = text;
-  td.textContent = "";
-  td.appendChild(span);
+  const td = document.createElement("td");
+  td.append(el("span", `state ${level}`, text));
   return td;
 }
 
-const fmtMs = v => v == null ? "–" : v >= 1000 ? `${(v / 1000).toFixed(2)} s` : v.toFixed(1);
-// mean ± SD in ONE unit (the mean's), never "2.15 s ± 158.7".
-const fmtSpread = m => m.mean >= 1000 ? `${(m.mean / 1000).toFixed(2)} ± ${(m.sd / 1000).toFixed(2)} s`
-                                      : `${m.mean.toFixed(1)} ± ${m.sd.toFixed(1)}`;
-const fmtPct = v => v == null ? "–" : `${(v * 100).toFixed(2)}%`;
-
-async function getJSON(url) {
-  const resp = await fetch(url, {cache: "no-store"});
+async function getJSON(url, options) {
+  const resp = await fetch(url, {cache: "no-store", ...options});
   // An error page may be HTML (e.g. a proxy's 502), not JSON: report the status, not a parse error.
   const body = await resp.json().catch(() => null);
   if (!resp.ok || body === null) throw new Error((body && body.error) || `${url}: HTTP ${resp.status}`);
   return body;
 }
+const postJSON = (url, payload) => getJSON(url, {
+  method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
 
-// One message per panel, so a successful live refresh doesn't hide an experiments error.
-const errors = {live: null, experiments: null};
+// One message per panel, so a success in one doesn't hide another's error.
+const errors = {live: null, experiments: null, control: null};
 function showError(panel, err) {
   errors[panel] = err ? err.message : null;
   const text = Object.values(errors).filter(Boolean).join(" · ");
@@ -64,14 +42,56 @@ function showError(panel, err) {
   $("#error").hidden = !text;
 }
 
-// --- Chart.js defaults from the CSS tokens -------------------------------------
-function applyChartDefaults() {
-  Chart.defaults.color = css("--ink-2");
-  Chart.defaults.borderColor = css("--grid");
-  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-  Chart.defaults.animation = false;          // a 3 s refresh shouldn't wobble
-  Chart.defaults.plugins.legend.labels.boxWidth = 12;
-}
+// --- live charts with event markers -------------------------------------------------
+
+let events = [];       // [{t: epoch seconds, label}] from /api/events
+let bucketTimes = [];  // epoch seconds at the start of each x label's bucket
+
+// A dashed vertical line + label at the bucket where each control action happened:
+// cause (a fault, a strategy switch) next to effect (the traffic moving).
+const eventMarkers = {
+  id: "eventMarkers",
+  afterDatasetsDraw(chart) {
+    const {ctx, chartArea, scales: {x}} = chart;
+    if (!bucketTimes.length) return;
+    ctx.save();
+    ctx.strokeStyle = css("--ink-2");
+    ctx.fillStyle = css("--ink");
+    ctx.setLineDash([4, 3]);
+    ctx.font = '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+    // Each label goes on the first text row where it doesn't overlap the previous
+    // label's text (rowEnds = where each row's last label ends), so events close
+    // together stack instead of printing on top of each other.
+    // Events in the same bucket share one line and one label ("a, b, +2 more").
+    const byBucket = new Map();
+    for (const event of events) {
+      const index = bucketTimes.findIndex(t => event.t >= t && event.t < t + BUCKET_S);
+      if (index < 0) continue;   // before the window, or in the bucket that isn't complete yet
+      if (!byBucket.has(index)) byBucket.set(index, []);
+      byBucket.get(index).push(event.label);
+    }
+    const rowEnds = [];
+    for (const [index, labels] of [...byBucket].sort((a, b) => a[0] - b[0])) {
+      const label = labels.length > 2 ? `${labels.slice(-2).join(", ")}, +${labels.length - 2} more`
+                                      : labels.join(", ");
+      const px = x.getPixelForValue(index);
+      ctx.beginPath();
+      ctx.moveTo(px, chartArea.top);
+      ctx.lineTo(px, chartArea.bottom);
+      ctx.stroke();
+      const width = ctx.measureText(label).width;
+      const left = Math.max(chartArea.left, Math.min(px + 4, chartArea.right - width));
+      let row = rowEnds.findIndex(end => end + 6 <= left);
+      if (row < 0) {
+        if (rowEnds.length >= 4) continue;   // no room left: the dashed line still marks it
+        row = rowEnds.length;
+      }
+      rowEnds[row] = left + width;
+      ctx.fillText(label, left, chartArea.top + 10 + 12 * row);
+    }
+    ctx.restore();
+  },
+};
 
 function lineChart(canvas, yTitle) {
   return new Chart(canvas, {
@@ -87,6 +107,7 @@ function lineChart(canvas, yTitle) {
       },
       plugins: {legend: {position: "bottom"}},
     },
+    plugins: [eventMarkers],
   });
 }
 
@@ -95,6 +116,7 @@ let rpsChart, p95Chart;
 function updateLineCharts(points) {
   const buckets = [...new Set(points.map(p => p.t))].sort();
   const servers = [...new Set(points.map(p => p.server))].sort();
+  bucketTimes = buckets.map(t => Date.parse(t) / 1000);
   const labels = buckets.map(t => new Date(t).toLocaleTimeString([], {hour12: false}));
   const lookup = new Map(points.map(p => [`${p.server}|${p.t}`, p]));
   for (const [chart, key, missing] of [[rpsChart, "rps", 0], [p95Chart, "p95_ms", null]]) {
@@ -110,12 +132,39 @@ function updateLineCharts(points) {
   }
 }
 
+// --- backends table + controls ----------------------------------------------------------
+
+let faults = {};   // address -> "none" | "slow" | "crash" | null (unreachable / no fault control)
+
+function faultButtons(address) {
+  const td = document.createElement("td");
+  const current = faults[address];
+  if (current == null) {
+    td.append(el("span", "muted", "unavailable"));
+    return td;
+  }
+  const group = el("div", "buttons");
+  for (const [type, label] of [["slow", "Slow +150 ms"], ["crash", "Crash"], ["restore", "Restore"]]) {
+    const button = el("button", type === "restore" ? "" : "danger", label);
+    button.type = "button";
+    // The active fault's own button is shown pressed; Restore is pointless when healthy.
+    button.disabled = (type === current) || (type === "restore" && current === "none");
+    button.setAttribute("aria-pressed", String(type === current));
+    button.addEventListener("click", () => sendControl("fault", {backend: address, type, ms: 150}));
+    group.append(button);
+  }
+  td.append(group);
+  return td;
+}
+
 function updateBackends(live, summary) {
   const status = $("#lb-status");
   status.textContent = live.lb_running ? "LB running" : "LB not reachable";
   status.className = `pill state ${live.lb_running ? "good" : "critical"}`;
-  $("#strategy").textContent = live.strategy ? (STRATEGY_LABELS[live.strategy] || live.strategy)
-    + (live.sticky_sessions ? " (sticky sessions)" : "") : "–";
+  const select = $("#strategy-select");
+  select.disabled = !live.lb_running;
+  if (live.strategy && document.activeElement !== select) select.value = live.strategy;
+  $("#strategy-swatch").style.background = live.strategy ? strategyColor(live.strategy) : "transparent";
   const fallbacks = $("#fallbacks");
   fallbacks.hidden = live.fallbacks == null;
   fallbacks.textContent = `Fallbacks to least connections: ${live.fallbacks}`;
@@ -129,7 +178,14 @@ function updateBackends(live, summary) {
   for (const [name, b] of rows) {
     const r = recent.get(name) || {};
     const tr = document.createElement("tr");
-    tr.appendChild(cell(name));
+    const label = document.createElement("td");
+    if (b) {
+      const dot = el("span", "swatch");
+      dot.style.background = backendColor(name);
+      label.append(dot);
+    }
+    label.append(document.createTextNode(name));
+    tr.append(label);
     if (!b) {
       tr.append(cell("–"), cell("–"), cell("–", "num"));
     } else {
@@ -146,8 +202,30 @@ function updateBackends(live, summary) {
     const hbText = !hb ? "–" : hb.age_s > HEARTBEAT_STALE_S ? `no heartbeat for ${hb.age_s.toFixed(0)} s`
       : `${hb.cpu_percent.toFixed(0)}% / ${hb.memory_percent.toFixed(0)}%`;
     tr.appendChild(cell(hbText, "num"));
+    tr.appendChild(b && live.lb_running ? faultButtons(name) : cell("–"));
     tbody.appendChild(tr);
   }
+}
+
+function updateLoad(load) {
+  for (const button of document.querySelectorAll("#load-buttons button")) {
+    const rate = Number(button.dataset.rate);
+    const active = rate === 0 ? !load.running : load.running && load.rate === rate;
+    button.setAttribute("aria-pressed", String(active));
+  }
+  $("#load-status").textContent = load.running
+    ? `${load.rate} req/s · sent ${load.sent}, errors ${load.errors}${load.skipped ? `, skipped ${load.skipped}` : ""}`
+    : "stopped";
+}
+
+async function sendControl(kind, payload) {
+  try {
+    await postJSON(`/api/control/${kind}`, payload);
+    showError("control", null);
+  } catch (err) {
+    showError("control", err);
+  }
+  refreshLive();   // show the effect without waiting for the next tick
 }
 
 // A slow database or LB must not stack up overlapping polls: skip a tick instead.
@@ -157,10 +235,14 @@ async function refreshLive() {
   if (liveBusy) return;
   liveBusy = true;
   try {
-    const [live, summary, traffic] = await Promise.all(
-      [getJSON("/api/backends"), getJSON("/api/summary"), getJSON("/api/traffic")]);
+    const [live, summary, traffic, load, recentEvents, currentFaults] = await Promise.all([
+      getJSON("/api/backends"), getJSON("/api/summary"), getJSON("/api/traffic"),
+      getJSON("/api/control/load"), getJSON("/api/events"), getJSON("/api/control/faults")]);
+    events = recentEvents;
+    faults = currentFaults;
     updateBackends(live, summary);
     updateLineCharts(traffic);
+    updateLoad(load);
     showError("live", null);
     $("#updated").textContent = new Date().toLocaleTimeString([], {hour12: false});
   } catch (err) {
@@ -170,97 +252,11 @@ async function refreshLive() {
   }
 }
 
-// --- Experiment results ----------------------------------------------------------
-
-// Draws each bar's value above it: identity and value never depend on colour alone.
-const valueLabels = {
-  id: "valueLabels",
-  afterDatasetsDraw(chart) {
-    const {ctx} = chart;
-    ctx.save();
-    ctx.fillStyle = css("--ink");
-    ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    chart.getDatasetMeta(0).data.forEach((bar, i) => {
-      ctx.fillText(fmtMs(chart.data.datasets[0].data[i]), bar.x, bar.y - 3);
-    });
-    ctx.restore();
-  },
-};
-
-const experimentCharts = [];
-
-function drawExperimentCharts(cells) {
-  experimentCharts.splice(0).forEach(c => c.destroy());
-  const box = $("#experiment-charts");
-  box.textContent = "";
-  const scenarios = [...new Set(cells.map(c => c.scenario))];
-  for (const scenario of scenarios) {
-    const rows = cells.filter(c => c.scenario === scenario);
-    const figure = document.createElement("figure");
-    const caption = document.createElement("figcaption");
-    caption.textContent = `${scenario.replaceAll("_", " ")}: p95 latency (ms)`;
-    const wrap = document.createElement("div");
-    wrap.className = "chart";
-    const canvas = document.createElement("canvas");
-    wrap.appendChild(canvas);
-    figure.append(caption, wrap);
-    box.appendChild(figure);
-    experimentCharts.push(new Chart(canvas, {
-      type: "bar",
-      data: {
-        labels: rows.map(r => TICK_LABELS[r.strategy] || r.strategy),
-        datasets: [{
-          data: rows.map(r => r.p95_latency_ms.mean),
-          backgroundColor: rows.map(r => strategyColor(r.strategy)),
-          borderColor: css("--surface"), borderWidth: 2,     // 2px gap between adjacent bars
-          borderRadius: {topLeft: 4, topRight: 4}, borderSkipped: "bottom", maxBarThickness: 48,
-        }],
-      },
-      options: {
-        maintainAspectRatio: false,
-        layout: {padding: {top: 18}},                         // room for the value labels
-        scales: {x: {grid: {display: false}, ticks: {autoSkip: false, maxRotation: 0, font: {size: 10}}},
-                 y: {beginAtZero: true}},
-        plugins: {
-          legend: {display: false},                            // the x labels name every bar
-          tooltip: {callbacks: {label: item => {
-            const r = rows[item.dataIndex].p95_latency_ms;
-            return `p95 ${fmtSpread(r)} (min ${fmtMs(r.min)}, max ${fmtMs(r.max)})`;
-          }}},
-        },
-      },
-      plugins: [valueLabels],
-    }));
-  }
-}
-
-function drawExperimentTable(cells) {
-  const tbody = $("#experiments tbody");
-  tbody.textContent = "";
-  let previous = null;
-  for (const c of cells) {
-    const tr = document.createElement("tr");
-    if (c.scenario !== previous && previous !== null) tr.className = "group-start";
-    tr.appendChild(cell(c.scenario === previous ? "" : c.scenario.replaceAll("_", " ")));
-    previous = c.scenario;
-    tr.append(
-      cell(STRATEGY_LABELS[c.strategy] || c.strategy),
-      cell(c.runs, "num"),
-      cell(fmtSpread(c.avg_latency_ms), "num"),
-      cell(`${fmtSpread(c.p95_latency_ms)} [${fmtMs(c.p95_latency_ms.min)}–${fmtMs(c.p95_latency_ms.max)}]`, "num"),
-      cell(fmtPct(c.error_rate.mean), "num"),
-      cell(c.throughput_rps.mean.toFixed(1), "num"),
-    );
-    tbody.appendChild(tr);
-  }
-}
+// --- experiment results ------------------------------------------------------------------
 
 // The batch the viewer picked; null = let the server choose (newest complete batch).
 // Not select.value: a freshly filled <select> reports its first option as chosen.
 let chosenBatch = null;
-
 // What is drawn now, to skip identical redraws: rebuilding the <select> every
 // 30 s would close it under the viewer's cursor, and new charts drop any open tooltip.
 let shownBatches = "", shownExperiments = "";
@@ -273,9 +269,8 @@ async function loadBatches() {
   shownBatches = key;
   select.textContent = "";
   for (const b of batches) {
-    const option = document.createElement("option");
+    const option = el("option", null, `${b.batch} (${b.runs} runs)`);
     option.value = b.batch;
-    option.textContent = `${b.batch} (${b.runs} runs)`;
     select.appendChild(option);
   }
 }
@@ -283,14 +278,16 @@ async function loadBatches() {
 async function refreshExperiments() {
   try {
     await loadBatches();
-    const select = $("#batch");
     const data = await getJSON("/api/experiments" + (chosenBatch ? `?batch=${encodeURIComponent(chosenBatch)}` : ""));
-    if (data.batch) select.value = data.batch;
+    if (data.batch) $("#batch").value = data.batch;
+    // No batch in this database yet (e.g. a fresh clone): the committed final results are shown.
+    $("#results-source").hidden = !data.source;
+    if (data.source) $("#results-source").textContent = `No experiments in this database yet: showing the ` +
+      `committed results of ${data.batch} (${data.source}). Run \`make experiments\` to measure your own.`;
     const key = JSON.stringify(data);
     if (key !== shownExperiments) {
       shownExperiments = key;
-      drawExperimentCharts(data.cells);
-      drawExperimentTable(data.cells);
+      drawResults(data);
     }
     showError("experiments", null);
   } catch (err) {
@@ -311,6 +308,13 @@ function start() {
     chosenBatch = event.target.value;
     refreshExperiments();
   });
+  $("#strategy-select").addEventListener("change", event => {
+    sendControl("strategy", {strategy: event.target.value});
+    event.target.blur();   // let the next refresh show the LB's actual strategy
+  });
+  for (const button of document.querySelectorAll("#load-buttons button")) {
+    button.addEventListener("click", () => sendControl("load", {rate: Number(button.dataset.rate)}));
+  }
   refreshLive();
   refreshExperiments();
   setInterval(refreshLive, REFRESH_SECONDS * 1000);
