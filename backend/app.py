@@ -2,6 +2,17 @@
 
 Run:  python -m backend.app --port 9001 --name fast --delay-ms 20
       python -m backend.app --port 9001 --heartbeat 127.0.0.1:9100   # + UDP heartbeats to the LB
+      python -m backend.app --port 9001 --capacity 8 --allow-control  # experiments (Phase 5)
+
+--capacity N: at most N requests are processed at once and the rest wait, like
+a server with N worker threads. Without it a sleep()-based backend has
+unlimited capacity: more traffic never makes it slower, so a traffic spike or
+an overloaded server could not be simulated.
+
+--allow-control: enables POST /control {"delay_ms": 300} to change the delay at
+runtime (the sudden-slowdown scenario). Off by default, because requests reach
+backends THROUGH the load balancer: with it on, any client could slow a
+backend down.
 """
 
 import argparse
@@ -22,12 +33,20 @@ class BackendServer(ThreadingHTTPServer):
     # retransmit. Match the load balancer's backlog so the backend isn't the bottleneck.
     request_queue_size = 128
 
-    def __init__(self, address, name: str, delay_ms: float = 0, jitter_ms: float = 0, quiet: bool = False):
+    def __init__(self, address, name: str, delay_ms: float = 0, jitter_ms: float = 0, quiet: bool = False,
+                 capacity: int = 0, allow_control: bool = False, seed: int | None = None):
         super().__init__(address, BackendHandler)
         self.name = name
         self.delay_ms = delay_ms
         self.jitter_ms = jitter_ms
         self.quiet = quiet
+        self.allow_control = allow_control
+        self.capacity = capacity
+        # A counting semaphore with N permits: the (N+1)th concurrent request
+        # blocks in acquire() until one finishes. None = unlimited.
+        self._slots = threading.BoundedSemaphore(capacity) if capacity > 0 else None
+        # Seeded so the jitter sequence is the same on every run of an experiment.
+        self.rng = random.Random(seed)
         # Requests being handled right now, reported in heartbeats. Each request
         # runs in its own thread, so the counter needs a lock (+= is not atomic).
         self._in_flight = 0
@@ -48,6 +67,16 @@ class BackendServer(ThreadingHTTPServer):
     def _add_in_flight(self, delta: int) -> None:
         with self._in_flight_lock:
             self._in_flight += delta
+
+    def work(self) -> float:
+        """Simulate one request's work; returns the delay used (ms), excluding time queued for a slot."""
+        delay_ms = self.delay_ms + self.rng.uniform(0, self.jitter_ms)
+        if self._slots is None:
+            time.sleep(delay_ms / 1000)
+            return delay_ms
+        with self._slots:  # wait for a free "worker", then hold it while working
+            time.sleep(delay_ms / 1000)
+        return delay_ms
 
 
 class BackendHandler(BaseHTTPRequestHandler):
@@ -83,15 +112,17 @@ class BackendHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         request_body = self.rfile.read(length) if length else b""
 
+        status = 200
         if self.path == "/health":
-            # No artificial delay: a health check asks "is the process alive?",
-            # not "is it fast?".
+            # No artificial delay and no capacity queue: a health check asks
+            # "is the process alive?", not "is it fast?".
             payload = {"status": "ok", "server": self.server.name}
+        elif self.path == "/control" and self.command == "POST":
+            status, payload = self._control(request_body)
         else:
-            # sleep() simulates I/O-bound latency (e.g. waiting on a database).
-            # CPU-bound slowness comes from Docker CPU limits in later phases.
-            delay_ms = self.server.delay_ms + random.uniform(0, self.server.jitter_ms)
-            time.sleep(delay_ms / 1000)
+            # sleep() simulates I/O-bound latency (e.g. waiting on a database);
+            # --capacity adds queueing once N requests are already being worked on.
+            delay_ms = self.server.work()
             payload = {
                 "server": self.server.name,
                 "method": self.command,
@@ -102,13 +133,31 @@ class BackendHandler(BaseHTTPRequestHandler):
             }
 
         body = json.dumps(payload).encode() + b"\n"
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Backend", self.server.name)
         self.end_headers()
         if send_body:
             self.wfile.write(body)
+
+    def _control(self, request_body: bytes) -> tuple[int, dict]:
+        if not self.server.allow_control:
+            return 404, {"error": "control endpoint disabled (start with --allow-control)"}
+        try:
+            changes = json.loads(request_body or b"{}")
+            if not isinstance(changes, dict):
+                raise ValueError('body must be a JSON object like {"delay_ms": 300}')
+            for key in ("delay_ms", "jitter_ms"):
+                if key in changes:
+                    value = float(changes[key])
+                    if not 0 <= value <= 60_000:
+                        raise ValueError(f"{key} out of range")
+                    setattr(self.server, key, value)  # one attribute store: atomic under the GIL
+        except (ValueError, TypeError, AttributeError) as exc:
+            return 400, {"error": str(exc)}
+        return 200, {"server": self.server.name, "delay_ms": self.server.delay_ms,
+                     "jitter_ms": self.server.jitter_ms}
 
     def log_message(self, format, *args):
         if not self.server.quiet:
@@ -123,6 +172,11 @@ def main() -> None:
     parser.add_argument("--delay-ms", type=float, default=0, help="fixed delay added to every request")
     parser.add_argument("--jitter-ms", type=float, default=0, help="extra random delay in [0, jitter]")
     parser.add_argument("--quiet", action="store_true", help="don't log each request")
+    parser.add_argument("--capacity", type=int, default=0,
+                        help="max requests processed at once; the rest wait (0 = unlimited)")
+    parser.add_argument("--allow-control", action="store_true",
+                        help="enable POST /control to change the delay at runtime (experiments only)")
+    parser.add_argument("--seed", type=int, help="seed for the jitter, for repeatable experiments")
     parser.add_argument("--heartbeat", metavar="HOST:PORT",
                         help="send UDP heartbeats (CPU, memory, active connections) to the LB here")
     parser.add_argument("--advertise", metavar="HOST:PORT",
@@ -130,8 +184,10 @@ def main() -> None:
     args = parser.parse_args()
 
     name = args.name or f"backend-{args.port}"
-    server = BackendServer((args.host, args.port), name, args.delay_ms, args.jitter_ms, args.quiet)
-    print(f"{name} listening on {args.host}:{args.port} (delay {args.delay_ms}ms + jitter {args.jitter_ms}ms)")
+    server = BackendServer((args.host, args.port), name, args.delay_ms, args.jitter_ms, args.quiet,
+                           capacity=args.capacity, allow_control=args.allow_control, seed=args.seed)
+    print(f"{name} listening on {args.host}:{args.port} (delay {args.delay_ms}ms + jitter {args.jitter_ms}ms"
+          f"{f', capacity {args.capacity}' if args.capacity else ''})")
     agent = None
     if args.heartbeat:
         # Imported here so a backend without --heartbeat doesn't need psutil.

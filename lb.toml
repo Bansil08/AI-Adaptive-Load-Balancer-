@@ -1,6 +1,6 @@
 # Load balancer configuration, read by `python -m lb.server` (override with --config).
 
-# Routing strategy. Phase 1: "round_robin".
+# Routing strategy: "round_robin" or "least_connections".
 strategy = "round_robin"
 
 # Send each client IP to the same backend (rendezvous hashing) instead of

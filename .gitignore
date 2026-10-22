@@ -20,6 +20,11 @@ experiments/results/*
 !experiments/results/failover_demo.json
 !experiments/results/db_benchmark.md
 !experiments/results/db_benchmark.json
+!experiments/results/baseline_results.md
+!experiments/results/baseline_results.json
+!experiments/results/baseline_bars.png
+!experiments/results/timeline_sudden_slowdown.png
+!experiments/results/timeline_server_crash.png
 
 # OS / editor
 .DS_Store
