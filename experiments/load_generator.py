@@ -91,20 +91,24 @@ class LoadGenerator:
         pending_events = sorted(events, key=lambda e: e[0])
         started_wall = time.time()
         started = time.monotonic()
-        for i, offset in enumerate(send_times):
-            while pending_events and pending_events[0][0] <= offset:
-                at, action = pending_events.pop(0)
+        try:
+            for i, offset in enumerate(send_times):
+                while pending_events and pending_events[0][0] <= offset:
+                    at, action = pending_events.pop(0)
+                    self._sleep_until(started + at)
+                    action()  # e.g. kill a backend; runs on this thread, so keep it short
+                self._sleep_until(started + offset)
+                jobs.put((i, started + offset, offset))
+            for at, action in pending_events:  # events scheduled after the last request
                 self._sleep_until(started + at)
-                action()  # e.g. kill a backend; runs on this thread, so keep it short
-            self._sleep_until(started + offset)
-            jobs.put((i, started + offset, offset))
-        for at, action in pending_events:  # events scheduled after the last request
-            self._sleep_until(started + at)
-            action()
-        for _ in threads:
-            jobs.put(None)
-        for t in threads:
-            t.join()
+                action()
+        finally:
+            # Even if an event fails, release the workers (each takes one None and exits),
+            # or 512 threads would wait on the queue forever.
+            for _ in threads:
+                jobs.put(None)
+            for t in threads:
+                t.join()
         return [r for r in results if r is not None], started_wall
 
     @staticmethod
@@ -123,8 +127,8 @@ class LoadGenerator:
                 response = conn.getresponse()
                 response.read()
                 status, backend = response.status, response.getheader("X-Backend")
-            except (OSError, http.client.HTTPException) as exc:
-                error = type(exc).__name__
+            except Exception as exc:  # OSError, HTTPException, or anything unexpected:
+                error = type(exc).__name__  # recorded as a failed request, never a silently lost one
             finally:
                 conn.close()
             results[i] = Result(offset, (time.monotonic() - scheduled) * 1000, status, error, backend)

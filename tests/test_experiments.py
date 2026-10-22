@@ -198,3 +198,33 @@ def test_run_results_sql(db):
     assert error_rate == pytest.approx(2 / 22)
     assert throughput == pytest.approx(2.0)  # 20 successful / 10 s
     assert db.execute("SELECT count(*) FROM run_results WHERE run_id = %s", (run_id,)).fetchone()[0] == 1
+
+
+
+@pytest.mark.db
+def test_throughput_counts_the_time_a_backlog_takes_to_drain(db):
+    """Regression: throughput divided by the planned duration, so a run still
+    serving its backlog at 34 s looked as fast as one done at 30 s."""
+    run_id = db.execute("INSERT INTO experiment_runs (strategy, scenario, started_at) VALUES ('rr', 'x',"
+                        " now() - interval '20 seconds') RETURNING id").fetchone()[0]
+    with db.cursor() as cur:  # 20 requests, the last one finishing 15 s after the start
+        cur.executemany("INSERT INTO requests (run_id, received_at, method, path, status_code, response_time_ms)"
+                        " VALUES (%s, now() - interval '20 seconds' + %s * interval '1 second', 'GET', '/', 200, %s)",
+                        [(run_id, i * 0.5, 5000.0 if i == 19 else 10.0) for i in range(20)])
+    throughput = db.execute(RUN_RESULTS_SQL, {"run_id": run_id, "duration": 10}).fetchone()[3]
+    assert throughput == pytest.approx(20 / 14.5, rel=0.01)   # last response at 9.5 s + 5 s, not 20 / 10
+
+
+def test_a_failing_event_still_releases_the_worker_threads(backend_factory):
+    """Regression: an exception in an event callback skipped the shutdown of
+    the worker pool, leaving its threads waiting on the queue forever."""
+    port = backend_factory(delay_ms=5).server_address[1]
+    before = threading.active_count()
+
+    def broken():
+        raise RuntimeError("backend did not answer /control")
+
+    with pytest.raises(RuntimeError):
+        LoadGenerator("127.0.0.1", port, workers=16).run(step_profile([(0, 20)]), 0.5, events=[(0.2, broken)])
+    time.sleep(0.1)
+    assert threading.active_count() <= before

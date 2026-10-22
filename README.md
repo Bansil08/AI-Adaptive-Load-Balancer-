@@ -105,16 +105,16 @@ The scenarios (`experiments/scenarios.py`): unequal servers (20 / 60 / 150 ms), 
 
 Mean of 3 runs per cell, 30 s each, seed 42; p95 min–max in brackets. Full table: `experiments/results/baseline_results.md`.
 
-| Scenario | Strategy | Avg latency | p95 latency | Errors | Requests sent to each backend |
-|---|---|---:|---:|---:|---|
-| Unequal servers | Round robin | 87.2 ms | 170 ms [169–172] | 0% | fast 33% / medium 33% / slow 33% |
-| | Least connections | **59.9 ms** | 166 ms [166–166] | 0% | fast 56% / medium 29% / slow 15% |
-| Sudden slowdown | Round robin | 343 ms | 2,438 ms [2,026–2,744] | 0% | a 33% / b 33% / c 33% |
-| | Least connections | **50.3 ms** | **45 ms** [44–46] | 0% | a 40% / b 21% / c 39% |
-| Traffic spike | Round robin | 721 ms | 3,596 ms [3,299–3,761] | 0% | fast 33% / medium 33% / slow 33% |
-| | Least connections | **55.5 ms** | **164 ms** [164–164] | 0% | fast 59% / medium 28% / slow 14% |
-| Server crash | Round robin | 35.8 ms | 39 ms | 0.18% | a 42% / b 17% / c 42% |
-| | Least connections | 35.8 ms | 39 ms | 0.20% | a 42% / b 17% / c 42% |
+| Scenario | Strategy | Avg latency | p95 latency | Errors | Throughput | Requests sent to each backend |
+|---|---|---:|---:|---:|---:|---|
+| Unequal servers | Round robin | 87.2 ms | 170 ms [169–172] | 0% | 90.4 req/s | fast 33% / medium 33% / slow 33% |
+| | Least connections | **59.9 ms** | 166 ms [166–166] | 0% | 90.6 req/s | fast 56% / medium 29% / slow 15% |
+| Sudden slowdown | Round robin | 343 ms | 2,438 ms [2,026–2,744] | 0% | 81.1 req/s | a 33% / b 33% / c 33% |
+| | Least connections | **50.3 ms** | **45 ms** [44–46] | 0% | **90.1 req/s** | a 40% / b 21% / c 39% |
+| Traffic spike | Round robin | 721 ms | 3,596 ms [3,299–3,761] | 0% | 113.8 req/s | fast 33% / medium 33% / slow 33% |
+| | Least connections | **55.5 ms** | **164 ms** [164–164] | 0% | **129.4 req/s** | fast 59% / medium 28% / slow 14% |
+| Server crash | Round robin | 35.8 ms | 39 ms | 0.18% | 90.6 req/s | a 42% / b 17% / c 42% |
+| | Least connections | 35.8 ms | 39 ms | 0.20% | 90.6 req/s | a 42% / b 17% / c 42% |
 
 ![Round robin vs least connections](experiments/results/baseline_bars.png)
 
@@ -124,7 +124,7 @@ Why each strategy behaved as it did:
 - **Sudden slowdown.** After b becomes 10× slower it can finish only ~25 req/s, but round robin keeps sending it 30 req/s, so b's queue grows for the rest of the run and p95 climbs from 40 ms to over 3 s (`timeline_sudden_slowdown.png`). Least connections sees b's in-flight count rise and cuts its share from 33% to ~9% within about a second, so the queue never forms. Its average (50 ms) is *above* its p95 (45 ms): the 300 ms responses are ~4.5% of requests, fewer than 5%, so they raise the average but sit above the p95.
 - **Traffic spike.** At 180 req/s, round robin's third (60 req/s) is more than the slow server's ~51 req/s capacity, so its queue grows for the 20 s the spike lasts. Least connections spreads by load (59 / 28 / 14%), no backend is overloaded, and p95 stays at 164 ms.
 - **Server crash.** No difference. About 5 requests per run fail either way: those in flight on b when it dies, and the few sent to it before the circuit breaker (5 consecutive failures) and the health checks (2 failed probes, ≤ 2 s) take it out; after that both strategies use the two survivors. Least connections' known weakness (a dead backend refuses connections in ~1 ms, so it looks idle) is cut short by the breaker. Retries were off on purpose; with them on, no client sees an error (see the failover demo).
-- **Throughput** is the same for both strategies in every scenario: the load is open loop and nothing timed out, so every request was eventually served. The cost of a bad strategy shows up as latency, not lost throughput, at these rates.
+- **Throughput** (successful requests ÷ the time taken to serve them) falls with round robin exactly where its queues form: 81.1 vs 90.1 req/s in the sudden slowdown (−10%) and 113.8 vs 129.4 req/s in the spike (−12%), because round robin needed 33.6 s and 34.2 s to finish 30 s of arrivals while its backlog drained. Elsewhere both serve the full offered rate (~90.5 req/s). No request was lost in any scenario except the crash: the cost of a poor strategy here is latency and the extra seconds of backlog, not dropped requests.
 
 ### Failover demo
 

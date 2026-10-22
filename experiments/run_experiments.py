@@ -96,13 +96,21 @@ INSERT INTO run_results (run_id, avg_latency_ms, p95_latency_ms, error_rate, thr
 SELECT %(run_id)s,
        -- Latency over successful requests only: a fast 502 would otherwise make
        -- a failing run look faster. Errors are counted separately.
-       coalesce(avg(response_time_ms) FILTER (WHERE status_code < 500), 0),
-       coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY response_time_ms)
-                FILTER (WHERE status_code < 500), 0),
-       coalesce(avg((status_code >= 500)::int), 0),
-       count(*) FILTER (WHERE status_code < 500) / %(duration)s::float8
-FROM requests
-WHERE run_id = %(run_id)s
+       coalesce(avg(r.response_time_ms) FILTER (WHERE r.status_code < 500), 0),
+       coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY r.response_time_ms)
+                FILTER (WHERE r.status_code < 500), 0),
+       coalesce(avg((r.status_code >= 500)::int), 0),
+       -- Throughput = successful requests / the time it took to serve them: from
+       -- the start of the load to the last response, or the planned duration if
+       -- that is longer. Dividing by the planned 30 s alone credited a strategy
+       -- whose backlog was still draining at 34 s with work done in overtime,
+       -- which made every strategy look equal (a review caught this).
+       count(*) FILTER (WHERE r.status_code < 500)
+         / greatest(%(duration)s::float8,
+                    extract(epoch FROM max(r.received_at + r.response_time_ms * interval '1 millisecond')
+                                       - min(e.started_at)))
+FROM requests r JOIN experiment_runs e ON e.id = r.run_id
+WHERE r.run_id = %(run_id)s
 RETURNING avg_latency_ms, p95_latency_ms, error_rate, throughput_rps
 """
 
@@ -231,6 +239,29 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
             "client_answered": answered, "client": client}
 
 
+def recompute_batch(conn: psycopg.Connection, batch: str) -> list[dict]:
+    """Rebuild run_results (and the per-run summaries) for a batch from the database, without re-running."""
+    runs = []
+    rows = conn.execute("SELECT id, strategy, scenario, notes FROM experiment_runs"
+                        " WHERE notes::jsonb ->> 'batch' = %s ORDER BY id", (batch,)).fetchall()
+    if not rows:
+        raise SystemExit(f"no runs found for batch {batch!r}")
+    for run_id, strategy, scenario, notes_text in rows:
+        notes = json.loads(notes_text)
+        if "share" not in notes:
+            continue  # a run that never finished
+        with conn.transaction():
+            conn.execute("DELETE FROM run_results WHERE run_id = %s", (run_id,))
+            avg, p95, error_rate, throughput = conn.execute(
+                RUN_RESULTS_SQL, {"run_id": run_id, "duration": notes["duration"]}).fetchone()
+        runs.append({"run_id": run_id, "strategy": strategy, "scenario": scenario, "repeat": notes["repeat"],
+                     "avg_latency_ms": avg, "p95_latency_ms": p95, "error_rate": error_rate,
+                     "throughput_rps": throughput, "share": notes["share"], "logged_rows": notes["logged_rows"],
+                     "client_answered": notes["client_answered"], "client": notes["client"],
+                     "base_seed": notes["seed"] - notes["repeat"]})  # repeat i ran with seed + i
+    return runs
+
+
 def aggregate(runs: list[dict]) -> dict:
     def stats(key):
         values = [r[key] for r in runs]
@@ -245,23 +276,25 @@ def aggregate(runs: list[dict]) -> dict:
             "share": {name: n / total for name, n in sorted(shares.items())}}
 
 
-def write_report(batch: str, args, runs: list[dict], path: Path) -> None:
+def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Path) -> None:
+    scenarios = [name for name in SCENARIOS if any(r["scenario"] == name for r in runs)]
+    strategies = [name for name in STRATEGIES if any(r["strategy"] == name for r in runs)]
     lines = [
         "# Baseline experiments: round robin vs least connections", "",
-        f"Measured {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} by "
-        f"`python -m experiments.run_experiments` (batch `{batch}`, seed {args.seed}, {args.repeats} repeats "
-        f"per cell, {args.duration or 'scenario'} s per run). Real measured numbers; nothing estimated.", "",
+        f"Batch `{batch}` (seed {seed}, {repeats} repeats per cell), produced by "
+        "`python -m experiments.run_experiments`. Real measured numbers; nothing estimated.", "",
         "Latency is the load balancer's `response_time_ms` over successful requests; error rate is 5xx over "
-        "all requests; throughput is successful requests per second. Each cell is the mean over the repeats, "
-        "p95 with its min–max range. Retries off, health checks every 1 s, circuit breaker on, capacity 8 "
-        "requests at a time per backend.", "",
+        "all requests; throughput is successful requests divided by the time taken to serve them (load start "
+        "to last response, at least the planned duration). Each cell is the mean over the repeats, p95 with "
+        "its min–max range. Retries off, health checks every 1 s, circuit breaker on, capacity 8 requests at "
+        "a time per backend.", "",
     ]
-    for name in args.scenarios:
+    for name in scenarios:
         scenario = SCENARIOS[name]
         lines += [f"## {name}", "", scenario.description, "",
                   "| Strategy | Avg latency (ms) | p95 latency (ms) [min–max] | Error rate | Throughput (req/s) | Share of requests |",
                   "|---|---:|---:|---:|---:|---|"]
-        for strategy in args.strategies:
+        for strategy in strategies:
             cell = [r for r in runs if r["scenario"] == name and r["strategy"] == strategy]
             if not cell:
                 continue
@@ -292,7 +325,16 @@ def main() -> None:
     parser.add_argument("--duration", type=float,
                         help="run every scenario for this many seconds (events and rate steps scale with it)")
     parser.add_argument("--no-plots", action="store_true")
+    parser.add_argument("--recompute", metavar="BATCH",
+                        help="rebuild run_results, the report and the charts for an existing batch; no new runs")
     args = parser.parse_args()
+
+    if args.recompute:
+        with psycopg.connect(database_url(), autocommit=True) as conn:
+            runs = recompute_batch(conn, args.recompute)
+        repeats = max(r["repeat"] for r in runs) + 1
+        save(args.recompute, runs[0]["base_seed"], repeats, runs, plots=not args.no_plots)
+        return
 
     batch = datetime.now(timezone.utc).strftime("baseline-%Y%m%dT%H%M%SZ")
     runs = []
@@ -307,12 +349,16 @@ def main() -> None:
                     print(f"{name:<16} {strategy:<18} repeat {repeat}: avg {run['avg_latency_ms']:7.1f} ms  "
                           f"p95 {run['p95_latency_ms']:7.1f} ms  errors {run['error_rate']:6.2%}  "
                           f"{run['throughput_rps']:6.1f} req/s  share {run['share']}", flush=True)
+    save(batch, args.seed, args.repeats, runs, plots=not args.no_plots)
+
+
+def save(batch: str, seed: int, repeats: int, runs: list[dict], plots: bool) -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     (RESULTS_DIR / "baseline_results.json").write_text(json.dumps(
-        {"batch": batch, "seed": args.seed, "repeats": args.repeats, "runs": runs}, indent=2, default=str) + "\n")
-    write_report(batch, args, runs, RESULTS_DIR / "baseline_results.md")
+        {"batch": batch, "seed": seed, "repeats": repeats, "runs": runs}, indent=2, default=str) + "\n")
+    write_report(batch, seed, repeats, runs, RESULTS_DIR / "baseline_results.md")
     print(f"saved {RESULTS_DIR / 'baseline_results.md'}")
-    if not args.no_plots:
+    if plots:
         from experiments.plot_results import plot_batch
         for path in plot_batch(batch):
             print(f"saved {path}")

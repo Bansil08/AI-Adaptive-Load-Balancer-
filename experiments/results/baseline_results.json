@@ -11,7 +11,7 @@
       "avg_latency_ms": 87.90951553181071,
       "p95_latency_ms": 171.75127059999795,
       "error_rate": 0.0,
-      "throughput_rps": 88.5,
+      "throughput_rps": 87.99699742975851,
       "share": {
         "fast": 885,
         "medium": 885,
@@ -26,7 +26,8 @@
         "avg_latency_ms": 92.80679138567388,
         "p95_latency_ms": 177.22521023461013,
         "throughput_rps": 88.5
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 14,
@@ -36,7 +37,7 @@
       "avg_latency_ms": 60.28014946365466,
       "p95_latency_ms": 166.4868876001492,
       "error_rate": 0.0,
-      "throughput_rps": 88.5,
+      "throughput_rps": 88.2297874529466,
       "share": {
         "fast": 1475,
         "medium": 777,
@@ -51,7 +52,8 @@
         "avg_latency_ms": 64.49762951012474,
         "p95_latency_ms": 170.21200487761234,
         "throughput_rps": 88.5
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 15,
@@ -61,7 +63,7 @@
       "avg_latency_ms": 86.65511319623864,
       "p95_latency_ms": 169.40592139926594,
       "error_rate": 0.0,
-      "throughput_rps": 92.23333333333333,
+      "throughput_rps": 91.80127065300496,
       "share": {
         "slow": 922,
         "medium": 922,
@@ -76,7 +78,8 @@
         "avg_latency_ms": 90.58740281442039,
         "p95_latency_ms": 174.37471680204908,
         "throughput_rps": 92.23333333333333
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 16,
@@ -86,7 +89,7 @@
       "avg_latency_ms": 59.74610001985624,
       "p95_latency_ms": 166.4380332997098,
       "error_rate": 0.0,
-      "throughput_rps": 92.23333333333333,
+      "throughput_rps": 91.95390686627832,
       "share": {
         "fast": 1557,
         "medium": 795,
@@ -101,7 +104,8 @@
         "avg_latency_ms": 63.9083506668279,
         "p95_latency_ms": 170.1053367505665,
         "throughput_rps": 92.23333333333333
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 17,
@@ -111,7 +115,7 @@
       "avg_latency_ms": 86.92825093549799,
       "p95_latency_ms": 169.90980000045965,
       "error_rate": 0.0,
-      "throughput_rps": 91.96666666666667,
+      "throughput_rps": 91.53106726650977,
       "share": {
         "fast": 920,
         "medium": 920,
@@ -126,7 +130,8 @@
         "avg_latency_ms": 90.98860435157094,
         "p95_latency_ms": 174.4730035043176,
         "throughput_rps": 91.96666666666667
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 18,
@@ -136,7 +141,7 @@
       "avg_latency_ms": 59.62846161362482,
       "p95_latency_ms": 165.8446630999606,
       "error_rate": 0.0,
-      "throughput_rps": 91.96666666666667,
+      "throughput_rps": 91.53917870212773,
       "share": {
         "slow": 413,
         "medium": 793,
@@ -151,7 +156,8 @@
         "avg_latency_ms": 63.64350721073364,
         "p95_latency_ms": 169.84070551916375,
         "throughput_rps": 91.96666666666667
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 19,
@@ -161,7 +167,7 @@
       "avg_latency_ms": 281.23861389077945,
       "p95_latency_ms": 2026.0254578997772,
       "error_rate": 0.0,
-      "throughput_rps": 88.5,
+      "throughput_rps": 80.65598744938154,
       "share": {
         "a": 885,
         "b": 885,
@@ -176,7 +182,8 @@
         "avg_latency_ms": 285.3525526426074,
         "p95_latency_ms": 2030.2598332327761,
         "throughput_rps": 88.5
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 20,
@@ -186,7 +193,7 @@
       "avg_latency_ms": 50.83565681242396,
       "p95_latency_ms": 44.20182489993749,
       "error_rate": 0.0,
-      "throughput_rps": 88.5,
+      "throughput_rps": 87.68887498344067,
       "share": {
         "c": 1052,
         "b": 557,
@@ -201,7 +208,8 @@
         "avg_latency_ms": 54.917652831794086,
         "p95_latency_ms": 54.29750764051278,
         "throughput_rps": 88.5
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 21,
@@ -211,7 +219,7 @@
       "avg_latency_ms": 379.7824589118308,
       "p95_latency_ms": 2743.958908899729,
       "error_rate": 0.0,
-      "throughput_rps": 92.23333333333333,
+      "throughput_rps": 82.03203215963985,
       "share": {
         "a": 923,
         "b": 922,
@@ -226,7 +234,8 @@
         "avg_latency_ms": 383.84545257041464,
         "p95_latency_ms": 2752.343298870983,
         "throughput_rps": 92.23333333333333
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 22,
@@ -236,7 +245,7 @@
       "avg_latency_ms": 50.722178573899946,
       "p95_latency_ms": 45.97194550078699,
       "error_rate": 0.0,
-      "throughput_rps": 92.23333333333333,
+      "throughput_rps": 91.43761274799603,
       "share": {
         "c": 1084,
         "b": 578,
@@ -251,7 +260,8 @@
         "avg_latency_ms": 54.86628497721459,
         "p95_latency_ms": 55.274556534641306,
         "throughput_rps": 92.23333333333333
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 23,
@@ -261,7 +271,7 @@
       "avg_latency_ms": 367.26111250307554,
       "p95_latency_ms": 2542.4895330001164,
       "error_rate": 0.0,
-      "throughput_rps": 91.96666666666667,
+      "throughput_rps": 80.66422177182018,
       "share": {
         "a": 920,
         "b": 920,
@@ -276,7 +286,8 @@
         "avg_latency_ms": 371.3155516854287,
         "p95_latency_ms": 2549.648639760562,
         "throughput_rps": 91.96666666666667
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 24,
@@ -286,7 +297,7 @@
       "avg_latency_ms": 49.38454435554605,
       "p95_latency_ms": 44.220758699702806,
       "error_rate": 0.0,
-      "throughput_rps": 91.96666666666667,
+      "throughput_rps": 91.08930059594654,
       "share": {
         "c": 1095,
         "b": 568,
@@ -301,7 +312,8 @@
         "avg_latency_ms": 52.77329728799599,
         "p95_latency_ms": 58.55816108851286,
         "throughput_rps": 91.96666666666667
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 25,
@@ -311,7 +323,7 @@
       "avg_latency_ms": 671.4095737074744,
       "p95_latency_ms": 3299.449663949962,
       "error_rate": 0.0,
-      "throughput_rps": 127.4,
+      "throughput_rps": 112.68608572439183,
       "share": {
         "fast": 1274,
         "medium": 1274,
@@ -326,7 +338,8 @@
         "avg_latency_ms": 674.0901655616561,
         "p95_latency_ms": 3302.3889724518085,
         "throughput_rps": 127.4
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 26,
@@ -336,7 +349,7 @@
       "avg_latency_ms": 55.29867002329627,
       "p95_latency_ms": 164.23251250053,
       "error_rate": 0.0,
-      "throughput_rps": 127.4,
+      "throughput_rps": 126.98331694378068,
       "share": {
         "fast": 2252,
         "medium": 1052,
@@ -351,7 +364,8 @@
         "avg_latency_ms": 57.8883736440008,
         "p95_latency_ms": 166.60226772910391,
         "throughput_rps": 127.4
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 27,
@@ -361,7 +375,7 @@
       "avg_latency_ms": 783.0882021884187,
       "p95_latency_ms": 3761.351375298545,
       "error_rate": 0.0,
-      "throughput_rps": 131.43333333333334,
+      "throughput_rps": 114.36572429947948,
       "share": {
         "slow": 1314,
         "medium": 1314,
@@ -376,7 +390,8 @@
         "avg_latency_ms": 785.5045506193167,
         "p95_latency_ms": 3762.7380146132055,
         "throughput_rps": 131.43333333333334
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 28,
@@ -386,7 +401,7 @@
       "avg_latency_ms": 55.560205823222034,
       "p95_latency_ms": 163.95400899909873,
       "error_rate": 0.0,
-      "throughput_rps": 131.43333333333334,
+      "throughput_rps": 130.9785322099895,
       "share": {
         "fast": 2325,
         "medium": 1082,
@@ -401,7 +416,8 @@
         "avg_latency_ms": 58.66182184787175,
         "p95_latency_ms": 166.79130196098413,
         "throughput_rps": 131.43333333333334
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 29,
@@ -411,7 +427,7 @@
       "avg_latency_ms": 709.3953990871937,
       "p95_latency_ms": 3727.5369580002007,
       "error_rate": 0.0,
-      "throughput_rps": 130.7,
+      "throughput_rps": 114.2188583637218,
       "share": {
         "slow": 1307,
         "medium": 1307,
@@ -426,7 +442,8 @@
         "avg_latency_ms": 711.8932898805986,
         "p95_latency_ms": 3730.57374578093,
         "throughput_rps": 130.7
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 30,
@@ -436,7 +453,7 @@
       "avg_latency_ms": 55.65294612318163,
       "p95_latency_ms": 164.0157920010097,
       "error_rate": 0.0,
-      "throughput_rps": 130.7,
+      "throughput_rps": 130.09282642408596,
       "share": {
         "fast": 2297,
         "medium": 1086,
@@ -451,7 +468,8 @@
         "avg_latency_ms": 58.6360402717025,
         "p95_latency_ms": 166.65650738286786,
         "throughput_rps": 130.7
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 31,
@@ -461,7 +479,7 @@
       "avg_latency_ms": 35.84941717662178,
       "p95_latency_ms": 38.78232514944102,
       "error_rate": 0.0018832391713747645,
-      "throughput_rps": 88.33333333333333,
+      "throughput_rps": 88.21018896919271,
       "share": {
         "c": 1102,
         "b": 450,
@@ -476,7 +494,8 @@
         "avg_latency_ms": 39.03603658418639,
         "p95_latency_ms": 43.81857884800411,
         "throughput_rps": 88.33333333333333
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 32,
@@ -486,7 +505,7 @@
       "avg_latency_ms": 35.90063694793468,
       "p95_latency_ms": 38.837616999626334,
       "error_rate": 0.0018832391713747645,
-      "throughput_rps": 88.33333333333333,
+      "throughput_rps": 88.18040793055324,
       "share": {
         "a": 1104,
         "b": 446,
@@ -501,7 +520,8 @@
         "avg_latency_ms": 39.159207445703046,
         "p95_latency_ms": 44.02953849239566,
         "throughput_rps": 88.33333333333333
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 33,
@@ -511,7 +531,7 @@
       "avg_latency_ms": 35.94770006696056,
       "p95_latency_ms": 38.87353269892628,
       "error_rate": 0.0018070112034694614,
-      "throughput_rps": 92.06666666666666,
+      "throughput_rps": 91.91667397418645,
       "share": {
         "a": 1152,
         "b": 464,
@@ -526,7 +546,8 @@
         "avg_latency_ms": 39.23384736122249,
         "p95_latency_ms": 44.22546288878948,
         "throughput_rps": 92.06666666666666
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 34,
@@ -536,7 +557,7 @@
       "avg_latency_ms": 35.914483669676905,
       "p95_latency_ms": 38.80366700104787,
       "error_rate": 0.0021684134441633538,
-      "throughput_rps": 92.03333333333333,
+      "throughput_rps": 91.90506755754777,
       "share": {
         "a": 1153,
         "b": 461,
@@ -551,7 +572,8 @@
         "avg_latency_ms": 38.97092409290563,
         "p95_latency_ms": 43.79055196113768,
         "throughput_rps": 92.03333333333333
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 35,
@@ -561,7 +583,7 @@
       "avg_latency_ms": 35.54870620113726,
       "p95_latency_ms": 38.523410300422256,
       "error_rate": 0.001812250815512867,
-      "throughput_rps": 91.8,
+      "throughput_rps": 91.67431146317361,
       "share": {
         "c": 1153,
         "b": 452,
@@ -576,7 +598,8 @@
         "avg_latency_ms": 38.399159406503266,
         "p95_latency_ms": 43.02114329402684,
         "throughput_rps": 91.8
-      }
+      },
+      "base_seed": 42
     },
     {
       "run_id": 36,
@@ -586,7 +609,7 @@
       "avg_latency_ms": 35.69982309368847,
       "p95_latency_ms": 38.64823804997286,
       "error_rate": 0.001812250815512867,
-      "throughput_rps": 91.8,
+      "throughput_rps": 91.64964875122362,
       "share": {
         "a": 1150,
         "b": 455,
@@ -601,7 +624,8 @@
         "avg_latency_ms": 38.65282531543434,
         "p95_latency_ms": 43.36399642670585,
         "throughput_rps": 91.8
-      }
+      },
+      "base_seed": 42
     }
   ]
 }
