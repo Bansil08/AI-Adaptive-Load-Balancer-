@@ -236,3 +236,18 @@ def test_only_a_full_batch_may_replace_the_committed_reports():
     assert not is_full_batch(full, repeats=1)                                  # too few repeats
     assert not is_full_batch(full[:1], repeats=3)                              # one scenario
     assert not is_full_batch([dict(r, duration=12.0) for r in full], repeats=3)  # shortened runs
+
+
+def test_set_delay_sends_the_admin_token_the_backends_expect(monkeypatch):
+    # Regression: with ADMIN_TOKEN in .env the experiment backends inherit it and
+    # require it, and the sudden-slowdown event failed with 403.
+    from experiments.run_experiments import set_delay
+    monkeypatch.setenv("ADMIN_TOKEN", "tok")
+    server = BackendServer(("127.0.0.1", 0), "b", delay_ms=30, quiet=True, allow_control=True, control_token="tok")
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+    try:
+        set_delay(server.server_address[1], 300)
+        assert server.delay_ms == 300
+    finally:
+        server.shutdown()
+        server.server_close()

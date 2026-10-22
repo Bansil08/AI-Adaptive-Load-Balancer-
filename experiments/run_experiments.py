@@ -48,6 +48,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -192,7 +193,10 @@ def set_delay(port: int, delay_ms: float) -> None:
     import http.client
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
-        conn.request("POST", "/control", body=json.dumps({"delay_ms": delay_ms, "jitter_ms": delay_ms * 0.1}))
+        # The backends inherited ADMIN_TOKEN from this process's environment (.env),
+        # and with it set their control endpoints require it.
+        conn.request("POST", "/control", body=json.dumps({"delay_ms": delay_ms, "jitter_ms": delay_ms * 0.1}),
+                     headers={"X-Admin-Token": os.environ.get("ADMIN_TOKEN", "")})
         response = conn.getresponse()
         response.read()
         if response.status != 200:
