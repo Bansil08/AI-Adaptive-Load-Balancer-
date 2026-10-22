@@ -1,6 +1,5 @@
 """Retry rules: GET/HEAD retried on another backend with backoff, POST never, retried flag recorded."""
 
-import json
 import socket
 import threading
 import time

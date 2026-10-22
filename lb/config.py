@@ -111,7 +111,7 @@ class RateLimitSettings:
     enabled: bool = True
     rate: float = 100.0          # tokens per second (sustained requests/s per IP)
     burst: float = 200.0         # bucket capacity (largest burst)
-    max_clients: int = 10_000    # buckets tracked before idle ones are evicted
+    max_clients: int = 10_000    # buckets kept; beyond that the least recently seen IP is forgotten
 
 
 @dataclass(frozen=True)

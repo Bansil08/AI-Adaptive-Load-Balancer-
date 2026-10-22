@@ -64,13 +64,18 @@ def test_disabled_limiter_allows_everything(clock):
     assert all(rl.allow("ip") for _ in range(100))
 
 
-def test_idle_full_buckets_are_evicted_when_tracking_too_many_ips(clock):
+def test_tracked_ips_are_capped_by_evicting_the_least_recently_seen(clock):
+    """Regression: only FULL buckets were evicted, so with more than max_clients
+    active IPs the dict grew without limit (and every new IP rescanned it all)."""
     rl = limiter(clock, burst=2.0, max_clients=3)
     for ip in ("a", "b", "c"):
-        rl.allow(ip)
-    clock.now += 10               # all three have refilled: indistinguishable from new
-    rl.allow("d")
-    assert set(rl._buckets) == {"d"}
+        rl.allow(ip)        # all three still have partly empty buckets
+    rl.allow("a")           # "a" is now the most recently seen
+    rl.allow("d")           # over the cap: evicts "b", the least recently seen
+    assert list(rl._buckets) == ["c", "a", "d"]
+    for i in range(1000):
+        rl.allow(f"10.0.{i // 256}.{i % 256}")
+    assert len(rl._buckets) == 3
 
 
 def test_concurrent_requests_never_spend_more_tokens_than_exist(clock):

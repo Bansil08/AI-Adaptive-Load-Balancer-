@@ -12,11 +12,17 @@ Thread safety: workers check buckets concurrently, and "read tokens, compare,
 subtract" must be one atomic step or two threads could spend the same last
 token. One lock covers the dict and every bucket; each critical section is a
 few arithmetic operations, so per-bucket locks would add complexity for nothing.
+
+Memory: at most `max_clients` buckets are kept, in least-recently-used order
+(an OrderedDict). A new IP beyond that evicts the IP seen longest ago, in
+O(1). That client's bucket has had the longest to refill, so forgetting it
+(it starts again with a full bucket) changes the least.
 """
 
 import math
 import threading
 import time
+from collections import OrderedDict
 from typing import Callable
 
 from lb.config import RateLimitSettings
@@ -46,10 +52,6 @@ class TokenBucket:
         self._refill(now)
         return max(0.0, (1 - self.tokens) / self.rate)
 
-    def is_full(self, now: float) -> bool:
-        self._refill(now)
-        return self.tokens >= self.capacity
-
 
 class RateLimiter:
     def __init__(self, settings: RateLimitSettings = RateLimitSettings(),
@@ -57,7 +59,7 @@ class RateLimiter:
         self.settings = settings
         self._clock = clock  # injectable so tests can move time forward without sleeping
         self._lock = threading.Lock()
-        self._buckets: dict[str, TokenBucket] = {}
+        self._buckets: OrderedDict[str, TokenBucket] = OrderedDict()  # oldest first
 
     def allow(self, client_ip: str) -> bool:
         """Spend one token for this client. False means answer 429."""
@@ -68,8 +70,10 @@ class RateLimiter:
             bucket = self._buckets.get(client_ip)
             if bucket is None:
                 if len(self._buckets) >= self.settings.max_clients:
-                    self._evict_full(now)
+                    self._buckets.popitem(last=False)  # forget the least recently seen IP
                 bucket = self._buckets[client_ip] = TokenBucket(self.settings.rate, self.settings.burst, now)
+            else:
+                self._buckets.move_to_end(client_ip)  # now the most recently seen
             return bucket.try_take(now)
 
     def retry_after(self, client_ip: str) -> int:
@@ -78,10 +82,3 @@ class RateLimiter:
             bucket = self._buckets.get(client_ip)
             wait = bucket.seconds_until_token(self._clock()) if bucket else 0.0
         return max(1, math.ceil(wait))
-
-    def _evict_full(self, now: float) -> None:
-        # A full bucket is indistinguishable from a brand-new one, so forgetting
-        # it changes nothing for that client. This bounds memory when many
-        # different IPs (or spoofed ones) show up.
-        for ip in [ip for ip, b in self._buckets.items() if b.is_full(now)]:
-            del self._buckets[ip]
