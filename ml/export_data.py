@@ -40,6 +40,7 @@ from pathlib import Path
 
 import psycopg
 
+from experiments.scenarios import SCENARIOS
 from lb.config import PROJECT_ROOT, database_url
 from lb.stats import LATENCY_EWMA_ALPHA
 from lb.strategies.ml_latency import FEATURES, MAX_HEARTBEAT_AGE_S
@@ -135,12 +136,24 @@ def write_csv(rows: list[dict], path: Path = DATA_PATH) -> Path:
 
 
 def latest_baseline_batch(conn: psycopg.Connection) -> str:
-    row = conn.execute("SELECT notes::jsonb ->> 'batch' FROM experiment_runs"
-                       " WHERE notes::jsonb ->> 'batch' LIKE 'baseline-%' AND ended_at IS NOT NULL"
-                       " ORDER BY id DESC LIMIT 1").fetchone()
+    """The newest FULL baseline batch: every scenario, 30 s runs, at least 3 repeats.
+
+    Not simply the newest: a quick check (`--duration 6 --repeats 1`) is newer
+    but is a few seconds of traffic, and `make train` would quietly train the
+    model on it. (Same rule as experiments.plot_results.latest_batch.)
+    """
+    row = conn.execute("""
+        SELECT e.notes::jsonb ->> 'batch' AS batch
+        FROM experiment_runs e JOIN run_results rr ON rr.run_id = e.id
+        WHERE e.notes::jsonb ->> 'batch' LIKE 'baseline-%%'
+        GROUP BY batch
+        HAVING count(DISTINCT e.scenario) = %s
+           AND min((e.notes::jsonb ->> 'duration')::float8) = 30
+           AND count(*) >= 3 * count(DISTINCT e.scenario) * count(DISTINCT e.strategy)
+        ORDER BY max(e.id) DESC LIMIT 1""", (len(SCENARIOS),)).fetchone()
     if row is None:
-        raise SystemExit("no baseline batch yet; run python -m experiments.run_experiments"
-                         " --strategies round_robin least_connections --seed 42 --repeats 3")
+        raise SystemExit("no full baseline batch yet; run make baselines (python -m experiments.run_experiments"
+                         " --strategies round_robin least_connections --seed 42 --repeats 3)")
     return row[0]
 
 

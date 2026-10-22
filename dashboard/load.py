@@ -58,6 +58,13 @@ class DemoLoad:
             stop, self._stop, self.rate = self._stop, None, 0.0
         if stop is not None:
             stop.set()
+        # Throw away jobs nobody sent yet: otherwise the next start() would fire
+        # them all at once, a burst the chosen rate never asked for.
+        while True:
+            try:
+                self._jobs.get_nowait()
+            except queue.Empty:
+                break
 
     def _schedule(self, stop: threading.Event) -> None:
         rng = random.Random()
@@ -69,6 +76,10 @@ class DemoLoad:
                 return
             next_at += rng.expovariate(rate)       # exponential gaps = Poisson arrivals
             delay = next_at - time.monotonic()
+            if delay < -1.0:
+                # Over a second behind (the machine slept, or this thread was
+                # starved): skip the missed sends rather than fire them in a burst.
+                next_at, delay = time.monotonic(), 0.0
             if delay > 0 and stop.wait(delay):
                 return
             try:

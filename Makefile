@@ -24,7 +24,8 @@ up:  ## start everything (Postgres, LB, 3 backends, dashboard) and wait until he
 	@echo "dashboard: http://127.0.0.1:5050   load balancer: http://127.0.0.1:8080"
 
 demo: up  ## `make up`, then start background load (DEMO_RATE=60 req/s) so the dashboard moves
-	curl -fsS -X POST http://127.0.0.1:5050/api/control/load -H 'Content-Type: application/json' \
+	curl -fsS --retry 10 --retry-connrefused --retry-delay 1 -X POST http://127.0.0.1:5050/api/control/load \
+	     -H 'Content-Type: application/json' \
 	     -d '{"rate": $(DEMO_RATE)}' > /dev/null
 	@echo "demo load running at $(DEMO_RATE) req/s: open http://127.0.0.1:5050"
 
@@ -81,7 +82,7 @@ quick-experiment:  ## a 12 s look at the traffic spike, all four strategies, one
 plots:  ## redraw the charts for the latest full batch
 	$(PY) -m experiments.plot_results
 
-static:  ## export the latest full batch to docs/ (the static results page for GitHub Pages)
+static:  ## export the latest full comparison batch to docs/ (the static results page for GitHub Pages)
 	$(PY) -m experiments.export_static
 
 overhead:  ## measure the LB's own overhead per request (~15 s)

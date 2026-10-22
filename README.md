@@ -41,7 +41,7 @@ To run the tests or the experiments you also need Python 3.11+:
 
 ```bash
 make setup         # .venv with the pinned dependencies, and .env from .env.example
-make test          # 412 tests, about a minute (needs `make up` for the database tests)
+make test          # 415 tests, about a minute (needs `make up` for the database tests)
 make experiments   # the full comparison: 4 strategies x 4 scenarios x 5 runs (~42 min) -> experiments/results/
 make static        # export the newest full batch to docs/ (the static results page)
 ```

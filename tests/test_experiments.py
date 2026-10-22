@@ -251,3 +251,12 @@ def test_set_delay_sends_the_admin_token_the_backends_expect(monkeypatch):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_static_page_assets_match_the_dashboards():
+    # docs/assets/ holds copies (experiments/export_static.py makes them); if they
+    # drift, the published page draws differently from the dashboard. Run `make static`.
+    from lb.config import PROJECT_ROOT
+    for name in ("results.js", "dashboard.css"):
+        assert (PROJECT_ROOT / "docs" / "assets" / name).read_bytes() == \
+            (PROJECT_ROOT / "dashboard" / "static" / name).read_bytes(), f"docs/assets/{name} is stale: make static"

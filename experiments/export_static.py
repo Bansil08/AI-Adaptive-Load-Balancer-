@@ -1,6 +1,6 @@
 """Export an experiment batch for the static results page in docs/ (GitHub Pages).
 
-    python -m experiments.export_static                       # the latest full batch
+    python -m experiments.export_static                       # the latest full comparison batch
     python -m experiments.export_static --batch comparison-20261022T212032Z
     python -m experiments.export_static --video-url https://youtu.be/...
 
@@ -46,7 +46,9 @@ WHERE notes::jsonb ->> 'batch' = %s
 
 def export(batch: str | None = None, video_url: str | None = None) -> dict:
     with psycopg.connect(database_url()) as conn:
-        batch = batch or latest_batch(conn)
+        # A comparison batch (all four strategies): a newer full baseline batch
+        # (`make baselines`, round robin + least connections only) is not the result to publish.
+        batch = batch or latest_batch(conn, prefix="comparison-")
         runs, first_seed, last_seed, repeats, duration, requests, cross_checked = conn.execute(
             METHODOLOGY_SQL, (batch,)).fetchone()
     if not runs:
@@ -77,7 +79,7 @@ def export(batch: str | None = None, video_url: str | None = None) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--batch", help="experiment batch label (default: the latest full batch)")
+    parser.add_argument("--batch", help="experiment batch label (default: the latest full comparison batch)")
     parser.add_argument("--video-url", help="link to the demo video, shown on the page")
     args = parser.parse_args()
     data = export(args.batch, args.video_url)

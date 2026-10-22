@@ -155,6 +155,13 @@ services:
     ports:
       - "127.0.0.1:5050:5050"
     init: true
+    # So `docker compose up --wait` (and `make demo` right after it) returns only
+    # once the dashboard is actually answering, not just once its process started.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 5050), 2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
     depends_on:
       lb:
         condition: service_healthy

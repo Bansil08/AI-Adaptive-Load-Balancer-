@@ -80,19 +80,20 @@ ORDER BY e.strategy, second
 """
 
 
-def latest_batch(conn) -> str:
+def latest_batch(conn, prefix: str = "") -> str:
     """The newest FULL batch: every scenario, 30 s runs, at least 3 repeats per
     cell. A quick look (`--duration 12 --repeats 1`) is newer but must not
-    replace the committed charts when someone runs `make plots`."""
+    replace the committed charts when someone runs `make plots`. With
+    `prefix` ("comparison"), only batches of that kind."""
     row = conn.execute("""
         SELECT e.notes::jsonb ->> 'batch' AS batch
         FROM experiment_runs e JOIN run_results rr ON rr.run_id = e.id
-        WHERE e.notes IS NOT NULL
+        WHERE e.notes IS NOT NULL AND e.notes::jsonb ->> 'batch' LIKE %s
         GROUP BY batch
         HAVING count(DISTINCT e.scenario) = %s
            AND min((e.notes::jsonb ->> 'duration')::float8) = 30
            AND count(*) >= 3 * count(DISTINCT e.scenario) * count(DISTINCT e.strategy)
-        ORDER BY max(e.id) DESC LIMIT 1""", (len(SCENARIOS),)).fetchone()
+        ORDER BY max(e.id) DESC LIMIT 1""", (f"{prefix}%", len(SCENARIOS))).fetchone()
     if row is None:
         raise SystemExit("no full experiment batch in the database yet; run python -m experiments.run_experiments"
                          " (or pass --batch)")

@@ -225,3 +225,11 @@ def test_controls_refuse_unknown_host_names_dns_rebinding(fakes, client):
     resp = client.post("/api/control/strategy", json={"strategy": "bandit"},
                        headers={"Host": "evil.example:5050", "Origin": "http://evil.example:5050"})
     assert resp.status_code == 403 and "DASHBOARD_HOSTS" in resp.get_json()["error"]
+
+
+def test_stop_discards_unsent_jobs_so_a_restart_does_not_burst():
+    load = DemoLoad("http://127.0.0.1:1")
+    for _ in range(50):
+        load._jobs.put_nowait(None)      # as if the workers had fallen behind
+    load.stop()
+    assert load._jobs.qsize() == 0
