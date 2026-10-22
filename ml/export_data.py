@@ -26,7 +26,7 @@ Where each column comes from:
     Each run started a fresh LB, so the replay starts from zero per run.
 
 A heartbeat older than MAX_HEARTBEAT_AGE_S counts as missing, as it does
-live; rows with a missing feature are kept (empty) and dropped by train.py,
+live, and so does one sent during an earlier run (see EXPORT_SQL); rows with a missing feature are kept (empty) and dropped by train.py,
 just as the live strategy falls back to least connections for them.
 
 Output: ml/data/training_data.csv (git-ignored; regenerate with this script).
@@ -48,15 +48,32 @@ BASELINE_STRATEGIES = ("round_robin", "least_connections")
 
 # The Phase 4 view does the heartbeat join; we only choose which runs and add
 # each run's start (to express time as seconds since the load started).
+#
+# The view joins on server_id, and every run reuses the same backend ports
+# (so the same servers rows): early in a run, "the latest heartbeat before
+# this request" can be one the PREVIOUS run's backend sent a second or two
+# earlier. That run's LB (and its own heartbeats) ended before this one
+# started, so the live LB, fresh for each run, never had it: such a
+# heartbeat is flagged here and treated as missing. (Found in review: 3,510
+# rows of the first export had one.)
 EXPORT_SQL = """
+WITH bounds AS (
+    -- Runs execute one at a time, so everything recorded before the latest
+    -- earlier run ended belongs to an earlier run.
+    SELECT id, max(ended_at) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_end
+    FROM experiment_runs
+)
 SELECT t.request_id, t.run_id, e.notes::jsonb ->> 'batch' AS batch, e.strategy, e.scenario,
        extract(epoch FROM t.received_at)                 AS received_s,
        extract(epoch FROM t.received_at - e.started_at)  AS t_in_run_s,
        t.server_id, t.status_code,
        t.cpu_percent, t.memory_percent, t.metrics_age_ms,
+       coalesce(t.received_at - t.metrics_age_ms * interval '1 millisecond' <= b.prev_end, false)
+                                                         AS heartbeat_from_earlier_run,
        t.response_time_ms
 FROM training_data t
 JOIN experiment_runs e ON e.id = t.run_id
+JOIN bounds b ON b.id = t.run_id
 WHERE e.strategy = ANY(%(strategies)s)
   AND (%(batch)s::text IS NULL OR e.notes::jsonb ->> 'batch' = %(batch)s)
   AND e.ended_at IS NOT NULL
@@ -95,8 +112,9 @@ def export(conn: psycopg.Connection, batch: str | None = None,
         row = dict(zip(names, values))
         for key in ("received_s", "t_in_run_s", "metrics_age_ms"):
             row[key] = None if row[key] is None else float(row[key])
-        if row["metrics_age_ms"] is None or row["metrics_age_ms"] > MAX_HEARTBEAT_AGE_S * 1000:
-            row["cpu_percent"] = row["memory_percent"] = None  # stale or no heartbeat: unknown
+        if (row["metrics_age_ms"] is None or row["metrics_age_ms"] > MAX_HEARTBEAT_AGE_S * 1000
+                or row["heartbeat_from_earlier_run"]):
+            row["cpu_percent"] = row["memory_percent"] = None  # stale, someone else's, or none: unknown
         groups.setdefault((row["run_id"], row["server_id"]), []).append(row)
     rows = []
     for group in groups.values():

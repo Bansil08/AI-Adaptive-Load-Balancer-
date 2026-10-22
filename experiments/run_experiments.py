@@ -43,6 +43,7 @@ ML strategy is included (Phase 6), so the Phase 5 report is kept.
 
 import argparse
 import csv
+import hashlib
 import json
 import statistics
 import subprocess
@@ -215,6 +216,8 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
     notes = {"batch": batch, "repeat": repeat, "seed": seed, "duration": duration,
              "backends": {spec.name: port for spec, port in zip(scenario.backends, BACKEND_PORTS)},
              "events": [vars(e) for e in scenario.events]}
+    if strategy == "ml_latency":  # which model file routed this run, for traceability
+        notes["model_sha256"] = hashlib.sha256(MODEL_PATH.read_bytes()).hexdigest()[:16]
     run_id = conn.execute("INSERT INTO experiment_runs (strategy, scenario, notes) VALUES (%s, %s, %s) RETURNING id",
                           (strategy, scenario.name, json.dumps(notes))).fetchone()[0]
     heartbeat_port = free_port()

@@ -153,9 +153,19 @@ def train(rows: list[dict], seed: int, budget_ms: float) -> dict:
     def per_scenario(predicted: np.ndarray) -> dict:
         return {s: mae(predicted[test_scenario == s], y_test[test_scenario == s]) for s in scenarios}
 
+    # Two regimes with very different errors: requests stuck behind round
+    # robin's growing backlog (seconds) and everything else. The ML strategy
+    # routes in the second one, and the first dominates the overall MAE.
+    backlog, normal = y_test > 1000, y_test < 200
+
+    def per_regime(predicted: np.ndarray) -> dict:
+        return {"under_200ms": mae(predicted[normal], y_test[normal]),
+                "over_1s": mae(predicted[backlog], y_test[backlog])}
+
     results = {"baseline_recent_avg": {
         "train_mae_ms": mae(X_train[:, avg_index], y_train), "test_mae_ms": mae(X_test[:, avg_index], y_test),
-        "test_mae_by_scenario": per_scenario(X_test[:, avg_index])}}
+        "test_mae_by_scenario": per_scenario(X_test[:, avg_index]),
+        "test_mae_by_regime": per_regime(X_test[:, avg_index])}}
     fitted = {}
     for name, model in candidates(seed).items():
         started = time.perf_counter()
@@ -164,8 +174,15 @@ def train(rows: list[dict], seed: int, budget_ms: float) -> dict:
         predicted = model.predict(X_test)
         fitted[name] = model
         results[name] = {"train_mae_ms": mae(model.predict(X_train), y_train), "test_mae_ms": mae(predicted, y_test),
-                         "test_mae_by_scenario": per_scenario(predicted), "fit_s": fit_s,
+                         "test_mae_by_scenario": per_scenario(predicted),
+                         "test_mae_by_regime": per_regime(predicted), "fit_s": fit_s,
                          "inference": inference_us(model, X_test), **describe(model)}
+    # Do CPU and memory help at all? The same line fitted without them
+    # (informational only: the saved model always uses all of FEATURES).
+    keep = [FEATURES.index("active_connections"), FEATURES.index("recent_avg_latency_ms")]
+    ablation = LinearRegression().fit(X_train[:, keep], y_train)
+    results_no_heartbeat = {"test_mae_ms": mae(ablation.predict(X_test[:, keep]), y_test),
+                            "test_mae_by_scenario": per_scenario(ablation.predict(X_test[:, keep]))}
     # The leak, measured: the same forest graded on a random split.
     r_train, r_test = random_split(rows, TEST_FRACTION, seed)
     (Xr_train, yr_train), (Xr_test, yr_test) = matrix(r_train), matrix(r_test)
@@ -178,8 +195,11 @@ def train(rows: list[dict], seed: int, budget_ms: float) -> dict:
         raise SystemExit(f"no model predicts within the {budget_ms} ms budget")
     best = min(fits, key=lambda n: results[n]["test_mae_ms"])
     return {"rows": len(rows), "train_rows": len(train_rows), "test_rows": len(test_rows),
+            "test_rows_under_200ms": int(normal.sum()), "test_rows_over_1s": int(backlog.sum()),
+            "train_max_ms": float(y_train.max()), "test_max_ms": float(y_test.max()),
             "runs": len({r["run_id"] for r in rows}), "scenarios": scenarios, "seed": seed,
             "budget_ms": budget_ms, "results": results, "random_split_mae_ms": random_split_mae,
+            "linear_without_heartbeat_features": results_no_heartbeat,
             "best": best, "model": fitted[best]}
 
 
@@ -208,14 +228,31 @@ def write_report(summary: dict, source: str, path: Path) -> None:
     for name in names:
         by = res[name]["test_mae_by_scenario"]
         lines.append(f"| {name} | " + " | ".join(f"{by[s]:.1f}" for s in summary["scenarios"]) + " |")
+    lines += ["", f"Test MAE by regime (ms). {summary['test_rows_over_1s']} test rows waited behind round robin's "
+              f"growing backlog (over 1 s; the slowest took {summary['test_max_ms']:.0f} ms, while the slowest "
+              f"training row took {summary['train_max_ms']:.0f} ms) and {summary['test_rows_under_200ms']} were "
+              "under 200 ms, the regime the ML strategy actually routes in:", "",
+              "| Model | Under 200 ms | Over 1 s |", "|---|---:|---:|"]
+    for name in names:
+        by = res[name]["test_mae_by_regime"]
+        lines.append(f"| {name} | {by['under_200ms']:.1f} | {by['over_1s']:.1f} |")
+    lines += ["", "The overall ranking is decided by the backlog rows: a tree can only predict values it saw in "
+              "training, so it cannot follow a backlog that keeps growing past the training maximum, while the "
+              "line extrapolates. Under 200 ms no model beats simply predicting the recent average. The saved "
+              "model was chosen by the overall test MAE, the rule fixed before training; it was not re-chosen "
+              "after seeing this.", ""]
     lr = res["linear_regression"]
-    lines += ["", "What the models rely on:", "",
+    lines += ["What the models rely on:", "",
               "- Linear regression: " + ", ".join(f"{k} {v:+.3g}" for k, v in lr["coefficients"].items())
               + f", intercept {lr['intercept']:+.3g} (ms per unit of each feature).",
               "- Random forest feature importances: " + ", ".join(
                   f"{k} {v:.1%}" for k, v in res["random_forest"]["importances"].items()) + ".",
               "- Decision tree feature importances: " + ", ".join(
                   f"{k} {v:.1%}" for k, v in res["decision_tree"]["importances"].items()) + ".", "",
+              f"Without the heartbeat features (CPU, memory), the same linear regression scores "
+              f"{summary['linear_without_heartbeat_features']['test_mae_ms']:.1f} ms test MAE (vs "
+              f"{lr['test_mae_ms']:.1f} ms with them): what they add, measured. In these experiments every "
+              "backend is the same sleeping Python process, so their CPU and memory barely differ.", "",
               f"Random split instead of time split (the misleading way): random forest test MAE "
               f"{summary['random_split_mae_ms']['random_forest']:.1f} ms vs "
               f"{res['random_forest']['test_mae_ms']:.1f} ms with the time split; the recent-average baseline "

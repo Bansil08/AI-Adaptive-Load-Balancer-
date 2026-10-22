@@ -77,6 +77,29 @@ def test_export_joins_heartbeats_and_drops_stale_ones(db):
     assert export(db, "other-batch") == []
 
 
+@pytest.mark.db
+def test_export_ignores_a_heartbeat_from_the_previous_run(db):
+    # Runs reuse the same backend ports (same servers row). A heartbeat the
+    # previous run's backend sent 1 s before this run's first request is
+    # "the latest before it" in SQL, but this run's fresh LB never received it.
+    server = db.execute("INSERT INTO servers (address, port) VALUES ('127.0.0.1', 9001) RETURNING id").fetchone()[0]
+    notes = json.dumps({"batch": "b"})
+    with db.transaction():
+        db.execute("INSERT INTO experiment_runs (strategy, scenario, started_at, ended_at, notes)"
+                   " VALUES ('round_robin', 'x', now() - interval '60 seconds', now() - interval '20.5 seconds', %s)",
+                   (notes,))
+        db.execute("INSERT INTO server_metrics (server_id, recorded_at, cpu_percent, memory_percent,"
+                   " active_connections) VALUES (%s, now() - interval '21 seconds', 5, 1, 0)", (server,))
+        run = db.execute("INSERT INTO experiment_runs (strategy, scenario, started_at, ended_at, notes)"
+                         " VALUES ('round_robin', 'x', now() - interval '20 seconds', now(), %s) RETURNING id",
+                         (notes,)).fetchone()[0]
+        db.execute("INSERT INTO requests (run_id, server_id, received_at, method, path, status_code,"
+                   " response_time_ms) VALUES (%s, %s, now() - interval '20 seconds', 'GET', '/', 200, 30)",
+                   (run, server))
+    (row,) = export(db, "b")
+    assert row["metrics_age_ms"] == pytest.approx(1000) and row["cpu_percent"] is None
+
+
 def test_ml_config_sections_are_read(tmp_path):
     path = tmp_path / "lb.toml"
     path.write_text('strategy = "bandit"\n[bandit]\nepsilon = 0.2\nwindow = 10\nseed = 7\n'

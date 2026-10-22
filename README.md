@@ -130,50 +130,63 @@ Why each strategy behaved as it did:
 ### ML strategies (Phase 6)
 
 ```bash
-python -m ml.export_data --batch baseline-20261022T030347Z   # training data from the Phase 5 runs -> ml/data/training_data.csv
-python -m ml.train                                           # fits 4 models, saves the best to ml/models/latency_model.joblib
-python -m ml.evaluate --data ml/data/comparison_baselines.csv   # MAE on later runs + per-decision overhead
-python -m experiments.run_experiments                        # all four strategies on all four scenarios
+python -m ml.export_data --batch baseline-20261022T030347Z   # training data from the Phase 5 runs (seeds 42-44)
+python -m ml.train                                           # fits the models, saves the best to ml/models/latency_model.joblib
+python -m experiments.run_experiments --seed 1000            # all four strategies, seeds the model never trained on
+python -m ml.export_data --batch <that batch> --out ml/data/comparison_baselines.csv
+python -m ml.evaluate --data ml/data/comparison_baselines.csv   # MAE on those unseen runs + per-decision overhead
 ```
 
 Set `strategy = "ml_latency"` or `"bandit"` in `lb.toml` (sections `[ml_latency]` and `[bandit]`; `epsilon` is configurable) to use them outside the experiments.
 
-- **`ml_latency`** (`lb/strategies/ml_latency.py`): for each healthy backend, predicts its response time from active connections, CPU %, memory % and recent average latency, and picks the lowest. The model is trained offline from the request log (`ml/export_data.py` rebuilds each feature as the LB knew it at that moment, `ml/train.py` splits by time). Saved model: linear regression, test MAE 22.6 ms vs 60.7 ms for "predict the recent average" (the depth-8 tree scored 77.7, the forest 80.5); on 24 later runs it never saw, 14.7 ms vs 31.3 ms. Details: `experiments/results/ml_training.md`, `ml_inference.md`.
-- **`bandit`** (`lb/strategies/bandit.py`): epsilon-greedy, no training. With probability 0.1 a random healthy backend (explore), otherwise the one with the best mean reward (−latency) over its last 50 requests (exploit). A failed request counts as 1000 ms.
-- **Safety** (`lb/strategies/guarded.py`): if the model is missing, a feature is unknown, the prediction throws or takes over 2 ms, the request goes to least connections and a counted WARNING is logged.
+- **`ml_latency`** (`lb/strategies/ml_latency.py`): predicts each healthy backend's response time from active connections, CPU %, memory % and recent average latency, and picks the lowest. Trained offline (`ml/export_data.py` rebuilds every feature exactly as the LB knew it at that moment; `ml/train.py` splits each run by time). Saved model: linear regression. Details in `experiments/results/ml_training.md` and `ml_inference.md`.
+- **`bandit`** (`lb/strategies/bandit.py`): epsilon-greedy with no training. With probability 0.1 it picks a random healthy backend (explore); otherwise it picks the best mean reward (−latency) over each backend's last 50 requests (exploit). A failed request counts as 1000 ms.
+- **Safety** (`lb/strategies/guarded.py`): if the model is missing, a feature is unknown, the prediction throws or returns NaN, or the decision takes over 2 ms, the request goes to least connections and a counted WARNING is logged.
+
+#### The model, measured
+
+| Model | Test MAE, all | Under 200 ms | Over 1 s (round robin backlog) |
+|---|---:|---:|---:|
+| Predict the recent average (baseline) | 60.7 ms | **3.3 ms** | 582 ms |
+| Linear regression (saved) | **22.6 ms** | 6.1 ms | **172 ms** |
+| Decision tree, depth 8 | 77.7 ms | 3.5 ms | 752 ms |
+| Random forest, 30 trees | 80.5 ms | 3.6 ms | 780 ms |
+
+The honest reading: linear regression wins overall only because 10% of test rows waited behind round robin's growing backlog, up to 7.6 s. That's beyond anything in training (max 3.5 s), and a tree can only predict values it has seen, while a line extrapolates. In the range the ML strategy actually routes in (under 200 ms), no model beats "predict the recent average". The CPU/memory features add nothing (22.5 ms without them): every backend here is the same sleeping Python process. A random split would have scored the forest at 6.8 ms instead of 80.5 ms and picked the wrong model. On 24 later runs with seeds the model never saw: 13.6 ms vs 30.6 ms for the baseline (better on the slowdown and spike, worse on unequal servers and the crash).
 
 #### All four strategies (measured)
 
-Batch `comparison-20261022T155233Z`: all four strategies in one batch, same seeds, 3 runs of 30 s per cell. Full table: `experiments/results/comparison_results.md`.
+Batch `comparison-20261022T162847Z`: all four strategies with the same seeds (1000–1002, not used for training), 3 runs of 30 s per cell. Full table: `experiments/results/comparison_results.md`.
 
 | Scenario | Strategy | Avg latency | p95 latency | Errors | Requests sent to each backend | Fallbacks |
 |---|---|---:|---:|---:|---|---:|
-| Unequal servers | Round robin | 85.3 ms | 168 ms | 0% | fast 33 / medium 33 / slow 33% | – |
-| | Least connections | 57.9 ms | 165 ms | 0% | fast 57 / medium 28 / slow 15% | – |
-| | ML latency | **27.3 ms** | **30 ms** | 0% | fast 99 / medium 1 / slow 1% | 1.56% |
-| | Bandit | 32.7 ms | 69 ms | 0% | fast 93 / medium 4 / slow 4% | 0% |
-| Sudden slowdown | Round robin | 336 ms | 2,388 ms | 0% | a 33 / b 33 / c 33% | – |
-| | Least connections | 49.5 ms | 50 ms [45–57] | 0% | a 40 / b 21 / c 39% | – |
-| | ML latency | **38.7 ms** | **41 ms** [40–43] | 0% | a 41 / b 18 / c 41% | 1.42% |
-| | Bandit | 43.8 ms | **41 ms** [40–42] | 0% | a 47 / b 15 / c 38% | 0% |
-| Traffic spike | Round robin | 728 ms | 3,638 ms | 0% | fast 33 / medium 33 / slow 33% | – |
-| | Least connections | 56.1 ms | 165 ms | 0% | fast 58 / medium 28 / slow 14% | – |
-| | ML latency | **27.1 ms** | **33 ms** | 0% | fast 99 / medium 0 / slow 0% | 0.67% |
-| | Bandit | 31.9 ms | 68 ms | 0% | fast 93 / medium 3 / slow 3% | 0% |
-| Server crash | Round robin | 36.0 ms | 38.8 ms | 0.18% | a 42 / b 17 / c 42% | – |
-| | Least connections | 36.1 ms | 39.0 ms | 0.18% | a 42 / b 17 / c 42% | – |
-| | ML latency | 36.8 ms | 40.0 ms | 0.20% | a 41 / b 17 / c 41% | 1.21% |
-| | Bandit | 36.1 ms | 39.3 ms | 0.15% | a 27 / b 19 / c 55% | 0.02% |
+| Unequal servers | Round robin | 85.2 ms | 168 ms | 0% | fast 33 / medium 33 / slow 33% | – |
+| | Least connections | 58.2 ms | 165 ms | 0% | fast 56 / medium 29 / slow 15% | – |
+| | ML latency | **27.8 ms** | **30 ms** [29–32] | 0% | fast 98 / medium 1 / slow 1% | 3.07% |
+| | Bandit | 31.8 ms | 68 ms | 0% | fast 93 / medium 3 / slow 4% | 0.02% |
+| Sudden slowdown | Round robin | 293 ms | 2,150 ms | 0% | a 33 / b 33 / c 33% | – |
+| | Least connections | 48.9 ms | 43 ms [41–46] | 0% | a 40 / b 21 / c 40% | – |
+| | ML latency | **37.4 ms** | **40 ms** [39–40] | 0% | a 41 / b 17 / c 42% | 0.56% |
+| | Bandit | 43.7 ms | **40 ms** [39–41] | 0% | a 27 / b 21 / c 52% | 0% |
+| Traffic spike | Round robin | 699 ms | 3,601 ms | 0% | fast 33 / medium 33 / slow 33% | – |
+| | Least connections | 55.4 ms | 164 ms | 0% | fast 59 / medium 28 / slow 14% | – |
+| | ML latency | **26.2 ms** | **30 ms** | 0% | fast 100 / medium 0 / slow 0% | 0.28% |
+| | Bandit | 31.4 ms | 68 ms | 0% | fast 93 / medium 3 / slow 3% | 0% |
+| Server crash | Round robin | 36.0 ms | 38.9 ms | 0.19% | a 42 / b 17 / c 42% | – |
+| | Least connections | 36.1 ms | 39.1 ms | 0.19% | a 42 / b 17 / c 42% | – |
+| | ML latency | 36.7 ms | 40.1 ms | 0.20% | a 42 / b 17 / c 41% | 0.84% |
+| | Bandit | 36.3 ms | 39.3 ms | 0.20% | a 47 / b 23 / c 30% | 0.02% |
 
 ![All four strategies](experiments/results/comparison_bars.png)
 
 Where ML wins, ties and loses, and why:
 
-- **Wins: unequal servers and the traffic spike.** p95 drops from ~165 ms (least connections) to 30–33 ms. Least connections balances *load*, so the 150 ms server still gets 14–15% of requests and the p95 is one of its answers. The model knows the 20 ms server stays fastest until it has many requests queued, so it sends it 99%. The fast server can do ~380 req/s, so even 180 req/s doesn't overload it. The bandit gets most of the way (p95 68 ms), but it pays for exploration: ε = 0.1 sends ~3–4% to *each* slow server permanently, which puts slow answers back into the top 5%. That's the price of being able to notice change.
-- **Small win: the sudden slowdown.** p95 41 ms for both ML strategies vs 50 ms for least connections. After b slows down, least connections still sends it ~9% (it only sees in-flight counts), so every second's p95 stays near 300 ms (`comparison_timeline_sudden_slowdown.png`). ML cuts b to ~1% within a second because its recent-average feature jumps. The bandit had a one-second spike right at the change (b was often its greedy choice, and its window needed a few slow answers to turn), then settled at ~3%. Most of the gain over round robin (2.4 s → 50 ms) comes from simply using load information, which least connections already does.
-- **Ties: the crash.** All four lose ~5 requests per run, those in flight on b or sent to it in the moment before the circuit breaker and health checks remove it. Nothing learned helps with a process that dies instantly.
-- **Costs.** One ML decision takes ~35 µs vs ~4 µs for least connections (`ml_inference.md`), invisible next to 20–300 ms backends. Fallbacks were 0.7–1.6% of ML requests: 145 of 421 had a feature missing (no fresh heartbeat or no latency history yet, mostly in a run's first second), and 276 were decisions that took over 2 ms, a thread waiting for Python's GIL while other workers ran, not a slow model. The bandit fell back twice in 12 runs.
-- **Caveats.** The model was trained on these same four scenarios (earlier runs), so this is the best case for it. It has no exploration: a backend it stops using keeps its old average, so it wouldn't notice a recovery. Its linear weights also rely on CPU/memory features that are close to noise here (the forest gave them 0.2% importance). On a mixed workload or after a recovery, the bandit's exploration or least connections' simplicity may well be the better choice.
+- **Wins: unequal servers and the traffic spike.** p95 drops from ~165 ms (least connections) to 30 ms. Least connections balances *load*, so the 150 ms server still gets 14–15% of requests and the p95 is one of its answers. The ML strategy sends 98–100% to the 20 ms server, which can do ~380 req/s, so even 180 req/s doesn't overload it. The bandit gets most of the way (68 ms) but pays for exploration: ε = 0.1 sends 3–4% to *each* slow server permanently, which puts slow answers back into the top 5%. That's the price of being able to notice change.
+- **Barely a win: the sudden slowdown.** p95 40 ms for both ML strategies vs 43 ms for least connections, and the ranges almost touch. After b slows down, least connections keeps sending it ~9%, so each second's p95 stays near 300 ms (`comparison_timeline_sudden_slowdown.png`), but that is under 5% of the whole run. ML cuts b to under 1% within a second. The bandit had a ~1 s spike right at the change (b was often its greedy choice), then settled at ~3%. Almost all of the gain over round robin (2.15 s → 43 ms) comes from using load information at all, which least connections already does.
+- **Tie (slightly worse): the crash.** ~0.2% errors for all four (the requests in flight on b, or sent to it before the circuit breaker and health checks remove it). ML's p95 is ~1 ms higher here (40.1 vs 39.1 ms): with equal backends there is nothing to learn, and it still pays its per-decision cost and its first-second fallbacks.
+- **What actually makes ML win is simple.** The gain comes from routing on *latency* rather than load. The model itself predicts no better than the recent average for normal requests (table above), and its weights are roughly "1 × recent average + 3 ms per request in flight". A non-ML rule like "lowest recent average plus a queue term" would very likely do as well. That was not measured here; it is the obvious next baseline.
+- **Costs.** One ML decision takes ~34 µs vs ~4 µs for least connections. 391 ML requests (~1.1%) fell back: 231 in the first second of a run, before a backend's first heartbeat or first answer (the strategy can't predict without them), and 160 that took over 2 ms because a thread was waiting for Python's GIL while other workers ran, not because the model was slow. The bandit fell back 4 times in 12 runs.
+- **Caveats.** The model was trained on earlier runs of these same four scenarios, so this is its best case. It never explores: a backend it stops using keeps its old average, so it wouldn't notice a recovery. Every backend here is a local process with an artificial delay, so CPU and memory carry no signal. Real servers might differ.
 
 ### Failover demo
 

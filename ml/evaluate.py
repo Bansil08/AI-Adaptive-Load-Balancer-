@@ -5,8 +5,11 @@
 
 1. MAE on data the model has never seen. train.py's test set is the last
    30% of the SAME runs it trained on; the stronger check is runs recorded
-   later (e.g. the round robin / least connections runs of the Phase 6
-   comparison batch), exported with ml.export_data --batch <label>.
+   later, with DIFFERENT seeds (e.g. the round robin / least connections runs
+   of the Phase 6 comparison batch, run with --seed 1000), exported with
+   ml.export_data --batch <label>. Runs with the training batch's seeds
+   repeat its exact arrival times and backend jitter, so they are not
+   independent (a review caught the first evaluation doing this).
 
 2. Inference overhead: how long one routing decision takes, timed around
    strategy.choose() for 3 backends, for least connections and for the ML
