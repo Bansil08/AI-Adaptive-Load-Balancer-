@@ -93,7 +93,7 @@ You need Python 3.11+, Docker Desktop (with Compose v2) and `make`. Commands are
 git clone https://github.com/Bansil08/AI-Adaptive-Load-Balancer-.git adaptive-lb && cd adaptive-lb
 make setup        # .venv with the pinned dependencies, and .env from .env.example (edit the password)
 make up           # Postgres, three backends (20 / 60 / 150 ms) and the dashboard, in Docker; applies the schema
-make test         # the full test suite (375 tests, under a minute)
+make test         # the full test suite (375 tests, about a minute)
 ```
 
 **Watch it work** (three terminals):
@@ -110,7 +110,7 @@ Try a failure while traffic flows: `docker compose stop backend-slow` (it goes d
 
 ```bash
 make baselines    # round robin + least connections on all scenarios (~13 min): the model's training data
-make train        # export that data with SQL and train the model -> ml/models/latency_model.joblib
+make train        # export that data with SQL and train the model -> ml/models/latency_model.joblib (+ ml_training.md)
 make experiments  # 4 strategies x 4 scenarios x 5 repeats, seed 2000 (~42 min) -> experiments/results/
 ```
 
