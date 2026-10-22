@@ -104,6 +104,8 @@ make traffic      # 60 s of traffic at 50 req/s through it
 open http://127.0.0.1:5050    # the dashboard: per-backend req/s and p95, health, circuit breakers, results
 ```
 
+On Linux, run the dashboard on the host instead (`docker compose stop dashboard`, then `make dashboard`): the LB's admin API listens only on loopback, which a Linux container can't reach.
+
 Try a failure while traffic flows: `docker compose stop backend-slow` (it goes down on the dashboard within ~4 s and traffic moves to the others), then `docker compose start backend-slow`. A single request: `curl -i localhost:8080/`. The admin API: `curl -s localhost:8081/backends`.
 
 **Reproduce the results** (about an hour, unattended):

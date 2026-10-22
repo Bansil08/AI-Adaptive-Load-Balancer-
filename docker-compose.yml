@@ -73,7 +73,12 @@ services:
 
   # Live dashboard (Flask + Chart.js) on http://127.0.0.1:5050. It reads Postgres
   # over the Compose network and the LB's admin API on the host (the LB itself
-  # runs on the host: `python -m lb.server`).
+  # runs on the host: `python -m lb.server`). Docker Desktop (macOS, Windows)
+  # forwards host.docker.internal to the host's loopback, where the admin API
+  # listens. On Linux it arrives on the bridge interface instead, so the page
+  # shows "LB not reachable": there, `docker compose stop dashboard` and run
+  # `make dashboard` on the host, rather than binding the unauthenticated admin
+  # API to a non-loopback address.
   dashboard:
     build: ./dashboard
     image: adaptive-lb-dashboard

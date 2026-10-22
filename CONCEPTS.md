@@ -215,13 +215,13 @@ That turns the full export from impractical into 2.8 s (measured). Without the i
 Short answers, each pointing at the code that backs it. Numbers are measured (see `README.md` and `experiments/results/`).
 
 **1. Why a fixed thread pool with a bounded queue instead of a new thread per connection?**
-Thread-per-connection has no upper bound: a traffic spike creates thousands of threads, each with its own stack. With the pool (`lb/server.py`, `lb/bounded_queue.py`) thread count is fixed. When the queue is full the listener stops calling `accept()`, so overload backs up into the kernel's listen backlog (backpressure). Measured: similar throughput up to 200 clients, but 437 threads vs a fixed 257 at 500 clients.
+Thread-per-connection has no upper bound: a traffic spike creates thousands of threads, each with its own stack. With the pool (`lb/server.py`, `lb/bounded_queue.py`) thread count is fixed. When the queue is full the listener stops calling `accept()`, so overload backs up into the kernel's listen backlog (backpressure). Measured: a 256-worker pool matched thread-per-connection's throughput up to 200 clients; at 500 clients thread-per-connection was ~9% faster but used 437 threads vs a fixed 257. A 32-worker pool capped at ~560 req/s: the pool size has to match the expected concurrency.
 
 **2. How does your bounded queue avoid busy-waiting and lost wake-ups?**
 One mutex and two condition variables, `not_full` and `not_empty` (`lb/bounded_queue.py`). `wait()` atomically releases the mutex and sleeps, so no wake-up can slip in between the check and the sleep. Waiters re-check their condition in a `while` loop, because another thread may take the slot first and wake-ups can be spurious.
 
 **3. What is the readers-writers problem, and where do you use it?**
-Per-backend stats (`lb/stats.py`) are read on every routing decision but written only when a request starts or ends. `lb/rwlock.py` lets many readers in together and a writer in alone. It prefers writers: a waiting writer blocks new readers, otherwise a steady stream of readers could starve it forever.
+Per-backend stats (`lb/stats.py`) are read on every routing decision but written only when a request starts or ends, or a heartbeat arrives. `lb/rwlock.py` lets many readers in together and a writer in alone. It prefers writers: a waiting writer blocks new readers, otherwise a steady stream of readers could starve it forever.
 
 **4. How do you prevent deadlock?**
 By breaking circular wait. No code path holds two locks at once. If one ever must, it follows a documented global lock order (`lb/server.py` docstring, the table above). Locks are never held while logging, doing I/O or calling a strategy, because `logging` has its own lock.
