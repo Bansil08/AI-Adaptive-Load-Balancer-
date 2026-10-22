@@ -68,7 +68,7 @@ def test_unreusable_connections_are_closed_not_pooled(backend):
     assert pool.counters().idle == 0 and conn.sock.fileno() == -1
 
 
-def test_peer_closed_sees_fin_and_reset():
+def test_peer_closed_sees_fin():
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen(1)
@@ -191,3 +191,60 @@ def test_pooled_lb_end_to_end(backend):
         assert pool.counters().created == 1
     finally:
         lb.shutdown()
+
+
+def closes_instead_of_answering_the_second_request():
+    """Answers one request per connection, then closes when the next one arrives
+    (as if its idle timeout fired at that moment): no FIN was waiting in the
+    pool, so the peek can't catch it."""
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    sock.listen(8)
+
+    def handle(conn):
+        with conn:
+            for answer in (True, False):
+                data = b""
+                while b"\r\n\r\n" not in data:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        return
+                    data += chunk
+                if answer:
+                    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+    def serve():
+        while True:
+            try:
+                conn, _ = sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=handle, args=(conn,), daemon=True).start()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return sock
+
+
+def test_get_on_a_connection_closed_at_reuse_is_resent_on_a_fresh_one():
+    """Regression: this gave 502 although a new connection to the same backend works."""
+    sock = closes_instead_of_answering_the_second_request()
+    try:
+        proxy = pooled_proxy([Backend("127.0.0.1", sock.getsockname()[1])])
+        assert [proxy.route_and_forward(GET, "127.0.0.1").status for _ in range(3)] == [200] * 3
+        counters = proxy.pool.counters()
+        assert counters.created == 3  # the 1st, then one fresh connection per stale reuse
+    finally:
+        sock.close()
+
+
+def test_post_on_a_connection_closed_at_reuse_is_not_resent():
+    sock = closes_instead_of_answering_the_second_request()
+    try:
+        proxy = pooled_proxy([Backend("127.0.0.1", sock.getsockname()[1])])
+        post = HTTPRequest("POST", "/", "HTTP/1.1", Headers([("Host", "x"), ("Content-Length", "0")]), b"")
+        assert proxy.route_and_forward(post, "127.0.0.1").status == 200
+        # The backend may have processed it before closing: never send a POST twice.
+        assert proxy.route_and_forward(post, "127.0.0.1").status == 502
+        assert proxy.pool.counters().created == 1
+    finally:
+        sock.close()

@@ -182,7 +182,9 @@ class AdminServer:
         drained, left = result
         if self.pool:
             self.pool.discard_backend(backend)
-        self.router.stats.remove(backend)
+        # Stats are kept: a request still in flight after a drain timeout
+        # will decrement its counters later, and deleting the entry would let
+        # that recreate it at -1 active connections.
         waited = round(time.monotonic() - started, 2)
         if drained:
             log.warning("admin: removed backend %s after draining for %.2fs", backend, waited)

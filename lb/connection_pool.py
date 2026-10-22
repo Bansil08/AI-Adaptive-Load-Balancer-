@@ -18,8 +18,9 @@ time (restart, its own idle timeout). Before reusing one we peek at it without
 blocking: if recv() reports end-of-file (b"") or an error, the backend has
 closed it, so we throw it away and try the next. Connections idle longer than
 `idle_timeout` are dropped too, since the backend has probably closed them.
-The check can still race with a close that happens right after it; the proxy
-treats a failure on a reused connection like any other backend failure.
+The check can still race with a close that happens right after it; if a
+reused connection then fails before any response byte arrives, the proxy
+resends a GET/HEAD once on a fresh connection (lb/proxy.py, _StaleConnection).
 """
 
 import socket
@@ -100,6 +101,10 @@ class ConnectionPool:
                 self._reused += 1
             conn.reused = True
             return conn
+        return self.connect(backend)
+
+    def connect(self, backend: Backend) -> PooledConnection:
+        """Always a brand-new connection (never one from the pool)."""
         # create_connection resolves the name and performs the TCP 3-way handshake.
         sock = socket.create_connection((backend.host, backend.port), timeout=self.connect_timeout)
         with self._lock:

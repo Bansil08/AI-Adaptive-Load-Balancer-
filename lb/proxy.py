@@ -24,7 +24,7 @@ from http import HTTPStatus
 
 from lb import config
 from lb.config import PoolSettings, ProxySettings, RetrySettings
-from lb.connection_pool import ConnectionPool
+from lb.connection_pool import ConnectionPool, PooledConnection
 from lb.rate_limiter import RateLimiter
 from lb.http_parser import (
     Headers,
@@ -35,7 +35,7 @@ from lb.http_parser import (
     read_request,
     read_response,
 )
-from lb.router import NoBackendAvailable, Router
+from lb.router import Lease, NoBackendAvailable, Router
 from lb.strategies.base import Backend
 
 log = logging.getLogger(__name__)
@@ -116,22 +116,45 @@ def can_reuse(response: HTTPResponse, reader: SocketReader) -> bool:
     )
 
 
+class _StaleConnection(Exception):
+    """A reused connection failed before a single response byte arrived."""
+
+
+def _exchange(conn: PooledConnection, request_bytes: bytes, method: str, backend: Backend,
+              settings: ProxySettings, pool: ConnectionPool) -> HTTPResponse:
+    reader = SocketReader(conn.sock)
+    try:
+        conn.sock.settimeout(settings.backend_read_timeout)
+        conn.sock.sendall(request_bytes)
+        response = read_response(reader, method)
+    except BaseException as exc:
+        # Half-read or broken: the connection's state is unknown, never pool it.
+        conn.sock.close()
+        # A reset or EOF with nothing received, on a connection that has been
+        # idle in the pool, most likely means the backend closed it just as we
+        # reused it (the race the peek in the pool can't rule out). A timeout
+        # is different: the backend may be busy working on the request.
+        if (conn.reused and reader.bytes_received == 0 and not isinstance(exc, TimeoutError)
+                and isinstance(exc, (OSError, ParseError))):
+            raise _StaleConnection from exc
+        raise
+    pool.release(backend, conn, reusable=can_reuse(response, reader))
+    return response
+
+
 def forward(request_bytes: bytes, method: str, backend: Backend, settings: ProxySettings,
             pool: ConnectionPool) -> HTTPResponse:
     """Send the request over a pooled (or new) connection and read the response."""
     # A new connection costs the TCP 3-way handshake; connect timeout bounds it.
     conn = pool.acquire(backend)
     try:
-        conn.sock.settimeout(settings.backend_read_timeout)
-        conn.sock.sendall(request_bytes)
-        reader = SocketReader(conn.sock)
-        response = read_response(reader, method)
-    except BaseException:
-        # Half-read or broken: the connection's state is unknown, never pool it.
-        conn.sock.close()
-        raise
-    pool.release(backend, conn, reusable=can_reuse(response, reader))
-    return response
+        return _exchange(conn, request_bytes, method, backend, settings, pool)
+    except _StaleConnection as exc:
+        if not is_retryable(method):
+            # The backend may still have received and processed a POST.
+            raise exc.__cause__ from None
+        # Same backend, guaranteed-fresh connection; a second failure is real.
+        return _exchange(pool.connect(backend), request_bytes, method, backend, settings, pool)
 
 
 def client_response_bytes(response: HTTPResponse) -> bytes:
@@ -216,13 +239,14 @@ class Proxy:
             if attempt:
                 time.sleep(backoff_delay(attempt, self.retry))
             try:
-                backend = self.router.acquire(request, client_ip, exclude=tried)
+                lease = self.router.acquire(request, client_ip, exclude=tried)
             except NoBackendAvailable as exc:
                 if not tried:
                     log.warning("503: %s", exc)
                 break  # nothing (left) to try: answer with the last failure
+            backend = lease.backend
             tried.append(backend)
-            outcome = self._attempt(request_bytes, request.method, backend)
+            outcome = self._attempt(request_bytes, request.method, lease)
             if isinstance(outcome, HTTPResponse):
                 return ProxyResult(outcome.status_code, client_response_bytes(outcome), backend, len(tried))
             status = outcome
@@ -230,8 +254,9 @@ class Proxy:
                 log.info("retrying %s %s after %d from %s", request.method, request.target, status, backend)
         return ProxyResult(status, error_response(status), tried[-1] if tried else None, len(tried))
 
-    def _attempt(self, request_bytes: bytes, method: str, backend: Backend) -> HTTPResponse | int:
+    def _attempt(self, request_bytes: bytes, method: str, lease: Lease) -> HTTPResponse | int:
         """One try on one leased backend: the response, or the error status to report."""
+        backend = lease.backend
         self.router.stats.request_started(backend)
         started = time.perf_counter()
         # Only a response or a timeout says how fast the backend is. A refused
@@ -260,7 +285,12 @@ class Proxy:
             # connections and ends its lease (or a drain would wait forever).
             elapsed_ms = (time.perf_counter() - started) * 1000
             self.router.stats.request_finished(backend, elapsed_ms if speed_known else None)
-            self.router.release(backend, ok)
+            self.router.release(lease, ok)
+            if lease.removed:
+                # Removed while we were still using it: the connection we just
+                # put back would never be taken out again (an fd and a backend
+                # thread held forever).
+                self.pool.discard_backend(backend)
 
     def handle_client(self, client_sock: socket.socket, client_addr: tuple) -> None:
         """Serve one client connection: read one request, proxy it, reply, close."""

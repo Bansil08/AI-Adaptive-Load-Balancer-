@@ -113,12 +113,12 @@ def test_drain_gives_up_after_its_timeout():
 
 def test_draining_backend_gets_no_new_leases():
     router = Router([A, B], RoundRobinStrategy())
-    router.acquire(REQUEST)  # holds A
+    held = router.acquire(REQUEST)  # holds A
     remover = threading.Thread(target=router.drain_and_remove, args=(A, 5))
     remover.start()
     wait_until(lambda: router.views()[0].draining)
-    assert {router.acquire(REQUEST) for _ in range(4)} == {B}
-    router.release(A, success=True)
+    assert {router.acquire(REQUEST).backend for _ in range(4)} == {B}
+    router.release(held, success=True)
     remover.join(2)
     assert not remover.is_alive() and router.backends == (B,)
 
@@ -174,3 +174,57 @@ def test_unhealthy_backends_are_never_chosen():
     router.set_healthy(B, False)
     with pytest.raises(NoBackendAvailable):
         router.choose(REQUEST)
+
+
+def test_old_lease_does_not_touch_a_re_added_backend():
+    """Regression: leases were looked up by address, so a request left over
+    from a forced removal decremented the re-added entry to -1 in flight, and
+    a later drain of it would then stop waiting too early."""
+    router = Router([A], RoundRobinStrategy())
+    old = router.acquire(REQUEST)
+    router.drain_and_remove(A, timeout=0.05)   # gives up: one request still running
+    router.add_backend(A)
+    new = router.acquire(REQUEST)
+    router.release(old, success=True)
+    assert router.views()[0].in_flight == 1     # only `new` is in flight
+    remover = threading.Thread(target=router.drain_and_remove, args=(A, 5))
+    remover.start()
+    time.sleep(0.1)
+    assert remover.is_alive(), "drain stopped waiting while a request was in flight"
+    router.release(new, success=True)
+    remover.join(2)
+    assert not remover.is_alive()
+
+
+def test_forced_removal_keeps_stats_consistent():
+    """Regression: removing the stats entry let the leftover request recreate it at -1."""
+    router = Router([A], RoundRobinStrategy())
+    admin = AdminServer(router, AdminSettings(drain_timeout=0.05))
+    lease = router.acquire(REQUEST)
+    router.stats.request_started(A)
+    assert admin.remove_backend(str(A))[1]["drained"] is False
+    router.stats.request_finished(A, 5.0)
+    router.release(lease, success=True)
+    assert router.stats.get(A).active_connections == 0
+
+
+def test_connection_returned_after_a_forced_removal_is_closed():
+    """A request outlives a drain timeout; the connection it puts back must not stay pooled."""
+    from lb.config import PoolSettings
+    from lb.connection_pool import ConnectionPool
+    from lb.proxy import Proxy
+    from tests.test_retries import make_request
+    slow = start_backend("slow", delay_ms=400)
+    b = as_backend(slow)
+    router = Router([b], RoundRobinStrategy())
+    proxy = Proxy(router, pool=ConnectionPool(PoolSettings(size=4)))
+    try:
+        worker = threading.Thread(target=proxy.route_and_forward, args=(make_request("GET"), "1.1.1.1"))
+        worker.start()
+        wait_until(lambda: router.views()[0].in_flight == 1)
+        assert router.drain_and_remove(b, timeout=0.05) == (False, 1)
+        worker.join(5)
+        assert proxy.pool.counters().idle == 0
+    finally:
+        slow.shutdown()
+        slow.server_close()

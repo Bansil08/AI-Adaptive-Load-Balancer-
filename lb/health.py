@@ -122,8 +122,14 @@ class HealthChecker:
         # takes the router's lock, and no code path holds two locks at once.
         initial = {b: self.router.is_healthy(b) for b in backends}
         with self._states_lock:
-            # Also forgets backends that were removed.
-            self._states = {b: self._states.get(b) or HealthState(initial[b]) for b in backends}
+            # Also forgets backends that were removed. A kept record that
+            # disagrees with the router (removed and re-added between rounds,
+            # so the router says down while we still say up) starts over;
+            # otherwise no transition would ever fire and it would stay down.
+            self._states = {
+                b: kept if (kept := self._states.get(b)) and kept.healthy == initial[b] else HealthState(initial[b])
+                for b in backends
+            }
         for backend in backends:
             if self._stop.is_set():
                 return

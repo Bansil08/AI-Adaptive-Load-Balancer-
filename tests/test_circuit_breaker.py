@@ -140,8 +140,9 @@ def test_concurrent_half_open_acquires_never_exceed_the_trial_limit(breaker, clo
 def test_router_skips_a_backend_whose_circuit_is_open():
     a, b = Backend("127.0.0.1", 1), Backend("127.0.0.1", 2)
     router = Router([a, b], RoundRobinStrategy(), BreakerSettings(failure_threshold=1, cooldown=60))
-    assert router.acquire(REQUEST) == a
-    router.release(a, success=False)  # opens a's circuit
+    lease = router.acquire(REQUEST)
+    assert lease.backend == a
+    router.release(lease, success=False)  # opens a's circuit
     assert [router.choose(REQUEST) for _ in range(4)] == [b] * 4
     router.release(router.acquire(REQUEST), success=False)  # and b's
     with pytest.raises(NoBackendAvailable):

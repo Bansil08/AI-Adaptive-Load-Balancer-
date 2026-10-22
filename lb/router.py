@@ -8,7 +8,10 @@ A backend is a routing candidate only if it is:
 Among the candidates, the strategy (or sticky hashing) picks one.
 
 acquire() / release() bracket every request ("a lease"), so a backend being
-removed can wait until its in-flight requests have finished (drain).
+removed can wait until its in-flight requests have finished (drain). The
+lease holds the backend's state object itself, not just its address: if the
+backend is removed and the same address is added again while an old request
+is still running, that request's release() must not touch the new entry.
 
 Locking: Router._lock guards the backend list and per-backend state. It is
 never held while calling into a breaker or the strategy (each has its own
@@ -40,7 +43,21 @@ class _BackendState:
     healthy: bool = True
     draining: bool = False
     in_flight: int = 0  # leases currently held (requests between acquire and release)
+    removed: bool = False
     added_at: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
+class Lease:
+    """Returned by acquire(); pass it back to release()."""
+
+    backend: Backend
+    _state: _BackendState = field(repr=False, compare=False)
+
+    @property
+    def removed(self) -> bool:
+        """The backend was removed while this request was still running (drain timeout)."""
+        return self._state.removed
 
 
 @dataclass(frozen=True)
@@ -112,30 +129,29 @@ class Router:
         return self.strategy.choose(candidates, request)
 
     def acquire(self, request: "HTTPRequest", client_ip: str = "",
-                exclude: Iterable[Backend] = ()) -> Backend:
+                exclude: Iterable[Backend] = ()) -> Lease:
         """Pick a backend and lease it. Every successful acquire() needs a release()."""
         skip = set(exclude)
         while True:
             backend = self.choose(request, client_ip, skip)
             # Lease first, then the breaker permit: giving back a lease is
             # trivial, giving back a half-open trial slot is not.
-            if self._start_lease(backend):
-                if self._state_of(backend).breaker.try_acquire():
-                    return backend
-                self._end_lease(backend)
+            state = self._start_lease(backend)
+            if state is not None:
+                if state.breaker.try_acquire():
+                    return Lease(backend, state)
+                self._end_lease(state)
             # Lost a race (it started draining, or another thread took the last
             # half-open trial slot): try the remaining candidates.
             skip.add(backend)
 
-    def release(self, backend: Backend, success: bool) -> None:
-        """End the lease from acquire(), reporting the outcome to the breaker."""
-        state = self._state_of(backend)
-        if state is not None:
-            if success:
-                state.breaker.record_success()
-            else:
-                state.breaker.record_failure()
-        self._end_lease(backend)
+    def release(self, lease: Lease, success: bool) -> None:
+        """End a lease from acquire(), reporting the outcome to the breaker."""
+        if success:
+            lease._state.breaker.record_success()
+        else:
+            lease._state.breaker.record_failure()
+        self._end_lease(lease._state)
 
     def _candidates(self, exclude: set[Backend]) -> list[Backend]:
         with self._lock:
@@ -156,23 +172,21 @@ class Router:
         with self._lock:
             return self._state.get(backend)
 
-    def _start_lease(self, backend: Backend) -> bool:
+    def _start_lease(self, backend: Backend) -> _BackendState | None:
         with self._lock:
             state = self._state.get(backend)
             # Checked under the same lock drain() uses to set `draining`, so once
             # draining is set no new lease can start: the in-flight count can
             # only go down, and drain() is guaranteed to finish.
             if state is None or state.draining:
-                return False
+                return None
             state.in_flight += 1
-            return True
+            return state
 
-    def _end_lease(self, backend: Backend) -> None:
+    def _end_lease(self, state: _BackendState) -> None:
         with self._lock:
-            state = self._state.get(backend)
-            if state is not None:
-                state.in_flight -= 1
-                self._lease_ended.notify_all()
+            state.in_flight -= 1  # this lease's own entry, even if since removed
+            self._lease_ended.notify_all()
 
     # --- runtime changes (health checker, admin API) -----------------------------------
 
@@ -203,6 +217,7 @@ class Router:
                     break
                 self._lease_ended.wait(remaining)
             left = state.in_flight
+            state.removed = True
             del self._state[backend]
             self._backends = tuple(b for b in self._backends if b != backend)
         return left == 0, left

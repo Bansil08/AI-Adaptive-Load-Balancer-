@@ -88,11 +88,6 @@ class ServerStats:
             counters.reported = active_connections
             counters.heartbeat_at = received_at
 
-    def remove(self, backend: Backend) -> None:
-        """Forget a backend the admin API removed."""
-        with self._lock.write_locked():
-            self._counters.pop(backend, None)
-
     def get(self, backend: Backend) -> BackendStats:
         with self._lock.read_locked():
             return self._freeze(self._counters.get(backend, _Counters()))

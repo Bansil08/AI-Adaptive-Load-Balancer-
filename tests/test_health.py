@@ -164,3 +164,18 @@ def test_background_thread_runs_rounds_until_stopped():
     finally:
         checker.stop()
     assert not checker._thread.is_alive()
+
+
+def test_backend_removed_and_re_added_comes_back_up(backend):
+    """Regression: the checker kept its old "healthy" record for the address,
+    the router said "down" (admin-added), and since the record never changed
+    state no UP transition fired: the backend stayed out of rotation forever."""
+    b = as_backend(backend)
+    router = Router([b], RoundRobinStrategy())
+    checker = HealthChecker(router, SETTINGS)
+    checker.run_once()
+    router.drain_and_remove(b, timeout=1)
+    router.add_backend(b, healthy=False)
+    for _ in range(SETTINGS.healthy_threshold):
+        checker.run_once()
+    assert router.is_healthy(b)

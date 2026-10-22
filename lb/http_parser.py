@@ -236,6 +236,7 @@ class SocketReader:
         # worker forever; with a fixed thread pool, a handful of those stall
         # every other client.
         self._deadline = deadline
+        self.bytes_received = 0  # lets the proxy tell "no answer at all" from "answer cut off"
 
     def _recv(self) -> bytes:
         if self._deadline is not None:
@@ -243,7 +244,9 @@ class SocketReader:
             if remaining <= 0:
                 raise TimeoutError("deadline for the whole message passed")
             self._sock.settimeout(remaining)
-        return self._sock.recv(RECV_SIZE)
+        chunk = self._sock.recv(RECV_SIZE)
+        self.bytes_received += len(chunk)
+        return chunk
 
     def read_head(self) -> bytes | None:
         """Read up to the blank line ending the headers. None if the peer closed cleanly first."""
