@@ -1,6 +1,7 @@
 # Pinned direct dependencies. Verified to resolve on Python 3.11 and 3.14.
 psycopg[binary]==3.3.6   # PostgreSQL driver (plain SQL, no ORM)
 python-dotenv==1.2.4     # load .env into environment variables
+psutil==7.2.2            # Phase 3: CPU/memory for the backend heartbeat agent
 scikit-learn==1.9.1      # Phase 6: supervised latency model
 numpy==2.4.6             # numeric arrays for ML / experiment stats
 matplotlib==3.11.2       # Phase 5/7: result plots

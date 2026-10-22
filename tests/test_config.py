@@ -72,3 +72,45 @@ def test_bad_config_values_raise_value_error(tmp_path, content):
     path.write_text(content)
     with pytest.raises(ValueError):
         load_lb_config(path)
+
+
+def test_repo_config_enables_the_phase_3_features():
+    cfg = load_lb_config(DEFAULT_LB_CONFIG)
+    assert cfg.pool.size > 0 and cfg.retry.max_retries > 0 and cfg.rate_limit.enabled
+    assert cfg.health.unhealthy_threshold >= 1 and cfg.admin.port and cfg.heartbeat.port
+    assert cfg.sticky_sessions is False
+
+
+def test_phase_3_sections_are_read(tmp_path):
+    path = tmp_path / "lb.toml"
+    path.write_text(
+        "sticky_sessions = true\n"
+        "[health]\ninterval = 1\nunhealthy_threshold = 4\npath = \"/ping\"\n"
+        "[circuit_breaker]\nfailure_threshold = 3\ncooldown = 0.5\n"
+        "[pool]\nsize = 0\n"
+        "[retries]\nmax_retries = 1\n"
+        "[rate_limit]\nenabled = false\nrate = 5\n"
+        "[heartbeat]\nport = 0\n"
+        "[admin]\nport = 9999\n"
+    )
+    cfg = load_lb_config(path)
+    assert cfg.sticky_sessions is True
+    assert (cfg.health.interval, cfg.health.unhealthy_threshold, cfg.health.path) == (1.0, 4, "/ping")
+    assert (cfg.breaker.failure_threshold, cfg.breaker.cooldown) == (3, 0.5)
+    assert cfg.pool.size == 0 and cfg.retry.max_retries == 1
+    assert cfg.rate_limit.enabled is False and cfg.rate_limit.rate == 5.0
+    assert (cfg.heartbeat.port, cfg.admin.port) == (0, 9999)
+
+
+@pytest.mark.parametrize("content", [
+    "[health]\nintervall = 2",           # typo: unknown keys are rejected, not ignored
+    "[health]\nunhealthy_threshold = 0", "[health]\ntimeout = -1", '[health]\npath = "health"',
+    "[circuit_breaker]\nfailure_threshold = 2.5", "[pool]\nsize = -1", "[retries]\nmax_retries = -1",
+    '[rate_limit]\nenabled = "yes"', "[rate_limit]\nrate = 0", "[admin]\nport = 70000",
+    "[retries]\nbackoff_base = inf", 'sticky_sessions = "on"', "health = 5",
+])
+def test_bad_phase_3_values_raise_value_error(tmp_path, content):
+    path = tmp_path / "lb.toml"
+    path.write_text(content)
+    with pytest.raises(ValueError):
+        load_lb_config(path)

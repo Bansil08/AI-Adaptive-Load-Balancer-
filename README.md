@@ -2,7 +2,7 @@
 
 An HTTP load balancer built on raw sockets and threads in Python. It routes traffic across backends of different speeds using round robin, least connections and two ML-based strategies, performs health checks and failover, logs every request to PostgreSQL, and includes an experiment harness that compares the strategies under different traffic scenarios.
 
-> **Status:** Phase 2 (thread pool, shared stats, graceful shutdown). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
+> **Status:** Phase 3 (health checks, circuit breaker, UDP heartbeats, connection pooling, retries, rate limiting, admin API). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
 
 ## Prerequisites
 
@@ -50,11 +50,38 @@ python -m lb.server
 for i in 1 2 3 4 5 6; do curl -s localhost:8080/; done
 ```
 
-Stop a backend (`docker compose stop backend-slow`) and its turns return `502 Bad Gateway`. A backend slower than `backend_read` in `lb.toml` returns `504 Gateway Timeout`. Health checks that skip dead backends arrive in Phase 3.
+Stop a backend (`docker compose stop backend-slow`): GET requests that were on their way to it are retried on another backend, and within a few seconds the health checks (and the circuit breaker) take it out of rotation; `docker compose start backend-slow` and it rejoins after two passed health checks. A backend slower than `backend_read` in `lb.toml` returns `504 Gateway Timeout`; POSTs are never retried, so they can see `502`/`504`.
+
+### Reliability features (Phase 3, all configured in `lb.toml`)
+
+| Feature | Section | What it does |
+|---------|---------|--------------|
+| Health checks | `[health]` | Every `interval` s: TCP connect, then `GET /health` must answer 200. Down after `unhealthy_threshold` failures in a row, up after `healthy_threshold` passes. |
+| Circuit breaker | `[circuit_breaker]` | Per backend, from real requests: `failure_threshold` consecutive failures → OPEN (skipped) for `cooldown` s → HALF_OPEN (`half_open_trials` test requests) → CLOSED. |
+| UDP heartbeats | `[heartbeat]` | Backends started with `--heartbeat 127.0.0.1:9100` report CPU %, memory % and active requests every second. |
+| Connection pooling | `[pool]` | Up to `size` idle keep-alive connections per backend are reused; `size = 0` opens a new connection per request. |
+| Retries | `[retries]` | GET/HEAD only, on a different backend, with exponential backoff; never POST. |
+| Rate limiting | `[rate_limit]` | Token bucket per client IP: `burst` requests at once, `rate` per second sustained; then `429` with `Retry-After`. |
+| Sticky sessions | `sticky_sessions` | Same client IP → same backend (rendezvous hashing). Off by default. |
+| Admin API | `[admin]` | Separate port, loopback only (no auth). See below. |
+
+```bash
+curl -s localhost:8081/backends                                          # health, circuit, stats, heartbeats, pool
+curl -s -X POST localhost:8081/backends -d '{"address": "127.0.0.1:9004"}' # joins after passing health checks
+curl -s -X DELETE localhost:8081/backends/127.0.0.1:9004                 # drains in-flight requests, then removes
+```
+
+### Failover demo
+
+```bash
+python -m experiments.demo_failover   # ~45 s; kills a backend under traffic and restarts it, twice (retries off / on)
+```
+
+Prints a per-second table (requests served by each backend, errors, the killed backend's health and circuit state) and saves it to `experiments/results/failover_demo.md`.
 
 Connections are served by a fixed pool of worker threads fed by a bounded queue; `[concurrency]` in `lb.toml` sets `workers`, `queue_size` and `shutdown_timeout`. Ctrl+C (SIGINT) or `kill` (SIGTERM) shuts down gracefully: new connections are refused, in-flight requests finish (for up to `shutdown_timeout` seconds), then the process exits. A second Ctrl+C exits immediately. `--thread-per-connection` switches to the Phase 1 design for comparison.
 
-Known limitation: a worker is busy for the whole time a client takes to send its request, so slow or idle clients can tie up the pool. `client` in `[timeouts]` (3 s) bounds the *whole* request, not each `recv()`, which stops a byte-at-a-time "slowloris" client from holding a worker forever, but ~32 such clients can still stall a 32-worker pool for a few seconds. Fixing that fully needs `select`/`epoll`, which this project deliberately leaves out; Phase 3 adds per-client-IP rate limiting.
+Known limitation: a worker is busy for the whole time a client takes to send its request, so slow or idle clients can tie up the pool. `client` in `[timeouts]` (3 s) bounds the *whole* request, not each `recv()`, which stops a byte-at-a-time "slowloris" client from holding a worker forever, but ~32 such clients can still stall a 32-worker pool for a few seconds. Fixing that fully needs `select`/`epoll`, which this project deliberately leaves out; the per-client-IP rate limit (`[rate_limit]`) caps how many requests one IP can send.
 
 ### Benchmark: thread pool vs thread-per-connection
 
@@ -64,13 +91,23 @@ python -m experiments.benchmark_concurrency   # ~25 min (waits for TIME_WAIT bet
 
 Results (with the exact setup) are saved to `experiments/results/concurrency_benchmark.md` and `.json`.
 
+### Benchmark: connection pooling vs a new connection per request
+
+```bash
+python -m experiments.benchmark_pooling   # ~5 min; starts its own backends and LBs
+```
+
+Results are saved to `experiments/results/pooling_benchmark.md` and `.json`.
+
 Without Docker, start the backends as processes instead (one terminal each):
 
 ```bash
-python -m backend.app --port 9001 --name fast   --delay-ms 20
-python -m backend.app --port 9002 --name medium --delay-ms 60
-python -m backend.app --port 9003 --name slow   --delay-ms 150
+python -m backend.app --port 9001 --name fast   --delay-ms 20  --heartbeat 127.0.0.1:9100
+python -m backend.app --port 9002 --name medium --delay-ms 60  --heartbeat 127.0.0.1:9100
+python -m backend.app --port 9003 --name slow   --delay-ms 150 --heartbeat 127.0.0.1:9100
 ```
+
+After pulling Phase 3, rebuild the backend image once (it now includes `psutil`): `docker compose build`.
 
 ## Repository layout
 

@@ -92,6 +92,9 @@ def start_lb(mode: str, backend_ports: list[int], workers: int, queue_size: int,
     config.write_text(
         f"backends = [{backends}]\n[listen]\nport = {port}\n"
         f"[concurrency]\nworkers = {workers}\nqueue_size = {queue_size}\nshutdown_timeout = 5\n"
+        # Keep the Phase 2 setup so results stay comparable: no pooling, no
+        # retries, and no rate limit (all load comes from one IP, 127.0.0.1).
+        "[pool]\nsize = 0\n[retries]\nmax_retries = 0\n[rate_limit]\nenabled = false\n"
     )
     args = [sys.executable, "-m", "lb.server", "--config", str(config), "--quiet"]
     if mode == BASELINE:

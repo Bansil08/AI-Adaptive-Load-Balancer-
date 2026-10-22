@@ -33,6 +33,8 @@ _METHOD_RE = re.compile(r"[A-Z]{1,16}")
 _DIGITS_RE = re.compile(r"[0-9]+")
 _VERSION_RE = re.compile(r"HTTP/[0-9]\.[0-9]")
 _STATUS_RE = re.compile(r"[1-5][0-9]{2}")
+# Chunk-size line: hex digits, optionally followed by ";extension" which we ignore.
+_CHUNK_SIZE_RE = re.compile(r"([0-9A-Fa-f]{1,16})(;.*)?")
 # Request target: "/" then visible ASCII only. Anything else (spaces, raw UTF-8,
 # control bytes) must be percent-encoded by the client. This also keeps escape
 # codes out of our logs and NUL bytes (which Postgres rejects) out of the DB.
@@ -113,6 +115,9 @@ class HTTPResponse:
     reason: str
     headers: Headers = field(default_factory=Headers)
     body: bytes = b""
+    # True if the body had no length and ended when the backend closed the
+    # connection; such a connection can't be reused for another request.
+    framed_by_close: bool = False
 
     def to_bytes(self) -> bytes:
         line = f"{self.version} {self.status_code} {self.reason}\r\n".encode("latin-1")
@@ -231,6 +236,7 @@ class SocketReader:
         # worker forever; with a fixed thread pool, a handful of those stall
         # every other client.
         self._deadline = deadline
+        self.bytes_received = 0  # lets the proxy tell "no answer at all" from "answer cut off"
 
     def _recv(self) -> bytes:
         if self._deadline is not None:
@@ -238,7 +244,9 @@ class SocketReader:
             if remaining <= 0:
                 raise TimeoutError("deadline for the whole message passed")
             self._sock.settimeout(remaining)
-        return self._sock.recv(RECV_SIZE)
+        chunk = self._sock.recv(RECV_SIZE)
+        self.bytes_received += len(chunk)
+        return chunk
 
     def read_head(self) -> bytes | None:
         """Read up to the blank line ending the headers. None if the peer closed cleanly first."""
@@ -269,6 +277,57 @@ class SocketReader:
         data = bytes(self._buf[:n])
         del self._buf[:n]
         return data
+
+    def has_buffered(self) -> bool:
+        """Bytes received beyond the last message (unexpected on a backend connection)."""
+        return bool(self._buf)
+
+    def read_line(self, limit: int) -> bytes:
+        """Read one CRLF-terminated line and return it with the CRLF."""
+        while True:
+            end = self._buf.find(CRLF)
+            if end != -1:
+                line = bytes(self._buf[: end + 2])
+                del self._buf[: end + 2]
+                return line
+            if len(self._buf) > limit:
+                raise ParseError(502, "line too long in chunked body")
+            chunk = self._recv()
+            if not chunk:
+                raise ParseError(502, "connection closed in the middle of a chunked body")
+            self._buf += chunk
+
+    def read_chunked(self, limit: int) -> bytes:
+        """Read a whole chunked body and return it still chunk-encoded.
+
+        Each chunk is "<size in hex>\r\n<size bytes>\r\n"; a size of 0 ends
+        the body, followed by optional trailer lines and a blank line. We only
+        need to find where the body ends (to reuse the connection); the bytes
+        are passed to the client unchanged and the client decodes them.
+        """
+        raw = bytearray()
+        while True:
+            line = self.read_line(1024)
+            raw += line
+            match = _CHUNK_SIZE_RE.fullmatch(_decode(line[:-2]))
+            if not match:
+                raise ParseError(502, "invalid chunk size line")
+            size = int(match.group(1), 16)
+            if size == 0:
+                break
+            if len(raw) + size > limit:
+                raise ParseError(502, "response body too large")
+            data = self.read_exact(size + 2)
+            if data[-2:] != CRLF:
+                raise ParseError(502, "chunk not followed by CRLF")
+            raw += data
+        while True:  # trailer section: header lines, then an empty line
+            line = self.read_line(8 * 1024)
+            raw += line
+            if line == CRLF:
+                return bytes(raw)
+            if len(raw) > limit:
+                raise ParseError(502, "response body too large")
 
     def read_until_close(self, limit: int) -> bytes:
         """Read until the peer closes the connection (body with no declared length)."""
@@ -315,7 +374,11 @@ def read_response(
     request_method: str,
     max_body: int = config.MAX_BODY_BYTES,
 ) -> HTTPResponse:
-    """Read one full response from a backend that was asked to close afterwards."""
+    """Read one full response from a backend.
+
+    The body ends at Content-Length, at the end of the chunked encoding, or,
+    when neither is given, when the backend closes the connection.
+    """
     while True:
         head = reader.read_head()
         if head is None:
@@ -329,16 +392,25 @@ def read_response(
         return response
 
     if "transfer-encoding" in response.headers:
-        # e.g. chunked: the body delimits itself. We asked the backend to close
-        # after responding, so reading to EOF captures it exactly; it is passed
-        # through unchanged and the client decodes the chunks.
+        codings = [c.strip().lower() for v in response.headers.get_all("transfer-encoding") for c in v.split(",")]
+        if codings[-1] == "chunked":
+            # The body delimits itself; read_chunked finds its end so the
+            # connection can be reused. Passed through still encoded.
+            try:
+                response.body = reader.read_chunked(max_body)
+            except ParseError as exc:
+                raise ParseError(502, exc.message) from None
+            return response
+        # Any other final coding means "the body ends at close" (RFC 9112 6.3).
         response.body = reader.read_until_close(max_body)
+        response.framed_by_close = True
         return response
 
     length = content_length(response.headers, error_status=502)
     if length is None:
         # No length declared: HTTP/1.x then says the body ends when the connection closes.
         response.body = reader.read_until_close(max_body)
+        response.framed_by_close = True
     elif length > max_body:
         raise ParseError(502, "response body too large")
     else:
