@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     # Only for type hints: a real import would be circular
     # (http_parser -> config -> strategies.base -> http_parser).
     from lb.http_parser import HTTPRequest
+    from lb.stats import ServerStats
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,10 @@ class LoadBalancingStrategy(ABC):
     """
 
     name: str = "base"
+
+    def attach(self, stats: "ServerStats") -> None:
+        """Called once by the Router with the shared live stats. Strategies that
+        need them (least connections, ML) keep a reference; others ignore it."""
 
     @abstractmethod
     def choose(self, backends: Sequence[Backend], request: "HTTPRequest") -> Backend:

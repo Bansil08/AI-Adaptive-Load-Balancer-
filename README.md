@@ -2,7 +2,7 @@
 
 An HTTP load balancer built on raw sockets and threads in Python. It routes traffic across backends of different speeds using round robin, least connections and two ML-based strategies, performs health checks and failover, logs every request to PostgreSQL, and includes an experiment harness that compares the strategies under different traffic scenarios.
 
-> **Status:** Phase 4 (request / health / metrics logging to PostgreSQL with a batching writer thread, indexes, dashboard views, retention). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
+> **Status:** Phase 5 (least connections, open-loop load generator, four automated scenarios, baseline experiments with results stored in PostgreSQL and plotted). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
 
 ## Prerequisites
 
@@ -87,6 +87,44 @@ python -m experiments.benchmark_db     # ~5 min, in a throwaway database: insert
 ```
 
 The benchmark results (batched vs single-row inserts, `EXPLAIN ANALYZE` with and without the indexes on 1.2M rows, batched vs single retention DELETE) are in `experiments/results/db_benchmark.md`.
+
+### Experiments: round robin vs least connections (Phase 5)
+
+```bash
+docker compose up -d postgres && python scripts/init_db.py   # results are stored in Postgres
+python -m experiments.run_experiments                         # ~14 min: 2 strategies x 4 scenarios x 3 repeats, seed 42
+python -m experiments.run_experiments --scenarios traffic_spike --repeats 1 --duration 12   # a quick look
+python -m experiments.plot_results                           # redraw the charts for the latest batch
+```
+
+Each run starts fresh backends (local processes on ports 19001-19003) and a fresh load balancer tagged with the run's `experiment_runs.id`, sends open-loop load with `experiments/load_generator.py`, fires the scenario's events (slow a backend down, kill one), then computes avg / p95 latency, error rate and throughput in SQL into `run_results`. Results: `experiments/results/baseline_results.md`, `baseline_bars.png`, `timeline_sudden_slowdown.png`, `timeline_server_crash.png`.
+
+The scenarios (`experiments/scenarios.py`): unequal servers (20 / 60 / 150 ms), a sudden 10x slowdown of one backend halfway through, a traffic spike from 30 to 180 req/s, and a backend killed halfway through. Every backend processes at most 8 requests at a time (`--capacity 8`), so it can be overloaded. Set `strategy = "least_connections"` in `lb.toml` to use it outside the experiments.
+
+#### Baseline results (measured)
+
+Mean of 3 runs per cell, 30 s each, seed 42; p95 min–max in brackets. Full table: `experiments/results/baseline_results.md`.
+
+| Scenario | Strategy | Avg latency | p95 latency | Errors | Throughput | Requests sent to each backend |
+|---|---|---:|---:|---:|---:|---|
+| Unequal servers | Round robin | 87.2 ms | 170 ms [169–172] | 0% | 90.4 req/s | fast 33% / medium 33% / slow 33% |
+| | Least connections | **59.9 ms** | 166 ms [166–166] | 0% | 90.6 req/s | fast 56% / medium 29% / slow 15% |
+| Sudden slowdown | Round robin | 343 ms | 2,438 ms [2,026–2,744] | 0% | 81.1 req/s | a 33% / b 33% / c 33% |
+| | Least connections | **50.3 ms** | **45 ms** [44–46] | 0% | **90.1 req/s** | a 40% / b 21% / c 39% |
+| Traffic spike | Round robin | 721 ms | 3,596 ms [3,299–3,761] | 0% | 113.8 req/s | fast 33% / medium 33% / slow 33% |
+| | Least connections | **55.5 ms** | **164 ms** [164–164] | 0% | **129.4 req/s** | fast 59% / medium 28% / slow 14% |
+| Server crash | Round robin | 35.8 ms | 39 ms | 0.18% | 90.6 req/s | a 42% / b 17% / c 42% |
+| | Least connections | 35.8 ms | 39 ms | 0.20% | 90.6 req/s | a 42% / b 17% / c 42% |
+
+![Round robin vs least connections](experiments/results/baseline_bars.png)
+
+Why each strategy behaved as it did:
+
+- **Unequal servers.** Round robin gives the 150 ms server a third of the traffic regardless. Least connections sees that server holding its requests longer (more in flight, Little's law) and sends it only 15%, so the average drops 31%. The p95 hardly moves: 15% is still more than 5% of requests, so the 95th percentile is still a slow-server response (~150–165 ms). To move the p95, the slow server would have to get under 5%, which only a latency-aware strategy would do.
+- **Sudden slowdown.** After b becomes 10× slower it can finish only ~25 req/s, but round robin keeps sending it 30 req/s, so b's queue grows for the rest of the run and p95 climbs from 40 ms to over 3 s (`timeline_sudden_slowdown.png`). Least connections sees b's in-flight count rise and cuts its share from 33% to ~9% within about a second, so the queue never forms. Its average (50 ms) is *above* its p95 (45 ms): the 300 ms responses are ~4.5% of requests, fewer than 5%, so they raise the average but sit above the p95.
+- **Traffic spike.** At 180 req/s, round robin's third (60 req/s) is more than the slow server's ~51 req/s capacity, so its queue grows for the 20 s the spike lasts. Least connections spreads by load (59 / 28 / 14%), no backend is overloaded, and p95 stays at 164 ms.
+- **Server crash.** No difference. About 5 requests per run fail either way: those in flight on b when it dies, and the few sent to it before the circuit breaker (5 consecutive failures) and the health checks (2 failed probes, ≤ 2 s) take it out; after that both strategies use the two survivors. Least connections' known weakness (a dead backend refuses connections in ~1 ms, so it looks idle) is cut short by the breaker. Retries were off on purpose; with them on, no client sees an error (see the failover demo).
+- **Throughput** (successful requests ÷ the time taken to serve them) falls with round robin exactly where its queues form: 81.1 vs 90.1 req/s in the sudden slowdown (−10%) and 113.8 vs 129.4 req/s in the spike (−12%), because round robin needed 33.6 s and 34.2 s to finish 30 s of arrivals while its backlog drained. Elsewhere both serve the full offered rate (~90.5 req/s). No request was lost in any scenario except the crash: the cost of a poor strategy here is latency and the extra seconds of backlog, not dropped requests.
 
 ### Failover demo
 

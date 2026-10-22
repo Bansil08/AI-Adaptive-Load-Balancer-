@@ -111,6 +111,7 @@ class Router:
         for backend in backends:
             self.add_backend(backend)
         self.stats = ServerStats(self._backends)
+        strategy.attach(self.stats)
 
     @property
     def backends(self) -> tuple[Backend, ...]:
