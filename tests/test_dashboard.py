@@ -31,13 +31,14 @@ def add_run(db, strategy, scenario, batch, p95, avg=10.0):
 
 def test_live_traffic_has_complete_5s_buckets_only(client, db):
     a = add_server(db, 9001)
-    # 10 requests 20 s ago (a complete bucket), 1 in the current, still-filling bucket.
+    # 10 requests in a complete bucket 20 s ago, and 1 in a bucket that is still to come. (Not
+    # simply "now": if a 5 s boundary passed before the API query, that bucket would be complete.)
     for ms in range(1, 11):
         db.execute("INSERT INTO requests (server_id, received_at, method, path, status_code, response_time_ms)"
                    " VALUES (%s, date_bin('5 seconds', now(), TIMESTAMPTZ '2000-01-01') - interval '20 seconds',"
                    " 'GET', '/', 200, %s)", (a, float(ms)))
-    db.execute("INSERT INTO requests (server_id, method, path, status_code, response_time_ms)"
-               " VALUES (%s, 'GET', '/', 200, 1)", (a,))
+    db.execute("INSERT INTO requests (server_id, received_at, method, path, status_code, response_time_ms)"
+               " VALUES (%s, now() + interval '10 seconds', 'GET', '/', 200, 1)", (a,))
     points = client.get("/api/traffic").get_json()
     assert len(points) == 1
     assert points[0]["server"] == "127.0.0.1:9001"

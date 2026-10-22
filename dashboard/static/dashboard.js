@@ -49,9 +49,19 @@ const fmtPct = v => v == null ? "–" : `${(v * 100).toFixed(2)}%`;
 
 async function getJSON(url) {
   const resp = await fetch(url, {cache: "no-store"});
-  const body = await resp.json();
-  if (!resp.ok) throw new Error(body.error || `${url}: HTTP ${resp.status}`);
+  // An error page may be HTML (e.g. a proxy's 502), not JSON: report the status, not a parse error.
+  const body = await resp.json().catch(() => null);
+  if (!resp.ok || body === null) throw new Error((body && body.error) || `${url}: HTTP ${resp.status}`);
   return body;
+}
+
+// One message per panel, so a successful live refresh doesn't hide an experiments error.
+const errors = {live: null, experiments: null};
+function showError(panel, err) {
+  errors[panel] = err ? err.message : null;
+  const text = Object.values(errors).filter(Boolean).join(" · ");
+  $("#error").textContent = text;
+  $("#error").hidden = !text;
 }
 
 // --- Chart.js defaults from the CSS tokens -------------------------------------
@@ -151,11 +161,10 @@ async function refreshLive() {
       [getJSON("/api/backends"), getJSON("/api/summary"), getJSON("/api/traffic")]);
     updateBackends(live, summary);
     updateLineCharts(traffic);
-    $("#error").hidden = true;
+    showError("live", null);
     $("#updated").textContent = new Date().toLocaleTimeString([], {hour12: false});
   } catch (err) {
-    $("#error").textContent = err.message;
-    $("#error").hidden = false;
+    showError("live", err);
   } finally {
     liveBusy = false;
   }
@@ -252,9 +261,16 @@ function drawExperimentTable(cells) {
 // Not select.value: a freshly filled <select> reports its first option as chosen.
 let chosenBatch = null;
 
+// What is drawn now, to skip identical redraws: rebuilding the <select> every
+// 30 s would close it under the viewer's cursor, and new charts drop any open tooltip.
+let shownBatches = "", shownExperiments = "";
+
 async function loadBatches() {
   const select = $("#batch");
   const batches = await getJSON("/api/batches");
+  const key = JSON.stringify(batches);
+  if (key === shownBatches) return;
+  shownBatches = key;
   select.textContent = "";
   for (const b of batches) {
     const option = document.createElement("option");
@@ -270,15 +286,23 @@ async function refreshExperiments() {
     const select = $("#batch");
     const data = await getJSON("/api/experiments" + (chosenBatch ? `?batch=${encodeURIComponent(chosenBatch)}` : ""));
     if (data.batch) select.value = data.batch;
-    drawExperimentCharts(data.cells);
-    drawExperimentTable(data.cells);
+    const key = JSON.stringify(data);
+    if (key !== shownExperiments) {
+      shownExperiments = key;
+      drawExperimentCharts(data.cells);
+      drawExperimentTable(data.cells);
+    }
+    showError("experiments", null);
   } catch (err) {
-    $("#error").textContent = err.message;
-    $("#error").hidden = false;
+    showError("experiments", err);
   }
 }
 
 function start() {
+  if (typeof Chart === "undefined") {  // loaded from a CDN: fails offline
+    showError("live", new Error("Chart.js could not be loaded (offline?); the charts need it."));
+    return;
+  }
   applyChartDefaults();
   rpsChart = lineChart($("#rps-chart"), "requests / s");
   p95Chart = lineChart($("#p95-chart"), "ms");
