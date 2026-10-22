@@ -21,6 +21,7 @@ import socket
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
+from typing import TYPE_CHECKING
 
 from lb import config
 from lb.config import PoolSettings, ProxySettings, RetrySettings
@@ -37,6 +38,9 @@ from lb.http_parser import (
 )
 from lb.router import Lease, NoBackendAvailable, Router
 from lb.strategies.base import Backend
+
+if TYPE_CHECKING:
+    from lb.db_writer import DBWriter
 
 log = logging.getLogger(__name__)
 
@@ -223,12 +227,16 @@ class Proxy:
         pool: ConnectionPool | None = None,
         retry: RetrySettings = RetrySettings(),
         rate_limiter: RateLimiter | None = None,
+        db: "DBWriter | None" = None,
     ):
         self.router = router
         self.settings = settings
         self.pool = pool or ConnectionPool(PoolSettings(size=0), settings.backend_connect_timeout)
         self.retry = retry
         self.rate_limiter = rate_limiter
+        # Optional request log (Phase 4). Only a non-blocking queue put happens
+        # here; the database write is done later by the DB writer thread.
+        self.db = db
 
     def route_and_forward(self, request: HTTPRequest, client_ip: str) -> ProxyResult:
         request_bytes = build_backend_request(request, client_ip, keep_alive=self.pool.enabled)
@@ -296,7 +304,6 @@ class Proxy:
         """Serve one client connection: read one request, proxy it, reply, close."""
         client_ip = client_addr[0]
         settings = self.settings
-        start = time.perf_counter()
         try:
             client_sock.settimeout(settings.client_timeout)
             try:
@@ -317,6 +324,11 @@ class Proxy:
                 return
             if request is None:
                 return  # connected and closed without sending anything
+            # Timed from the moment the whole request has arrived, so a client
+            # that uploads slowly doesn't count as a slow backend (measured
+            # before this: a 10 ms backend logged at 1516 ms behind a 1.5 s upload).
+            start = time.perf_counter()
+            received_at = time.time()  # wall-clock time for the log; perf_counter only measures intervals
 
             if self.rate_limiter and not self.rate_limiter.allow(client_ip):
                 # Checked after reading the request so the rejection can be logged
@@ -324,6 +336,9 @@ class Proxy:
                 retry_after = str(self.rate_limiter.retry_after(client_ip))
                 _send(client_sock, error_response(429, (("Retry-After", retry_after),)))
                 log.info("%s %s %s -> - 429 rate limited", client_ip, request.method, request.target)
+                if self.db:
+                    self.db.log_request(None, request.method, request.target, 429,
+                                        (time.perf_counter() - start) * 1000, False, received_at)
                 return
 
             result = self.route_and_forward(request, client_ip)
@@ -335,5 +350,10 @@ class Proxy:
                 client_ip, request.method, request.target, result.backend or "-", result.status,
                 elapsed_ms, f" (retried, {result.attempts} attempts)" if result.retried else "",
             )
+            if self.db:
+                # backend None (no backend available, 503) is logged with a NULL
+                # server_id, so it still counts towards the error rate.
+                self.db.log_request(result.backend, request.method, request.target, result.status,
+                                    elapsed_ms, result.retried, received_at)
         finally:
             close_gracefully(client_sock)

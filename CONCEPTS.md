@@ -60,8 +60,9 @@ Every feature in this project, the file that implements it, and the CS concept i
 | `recvfrom` keeps boundaries | `lb/heartbeat.py` | CN | Datagram vs stream sockets | `SOCK_DGRAM`: no `listen`/`accept`, and one `recvfrom()` returns exactly one datagram, unlike TCP where one `recv()` may hold half or two messages. |
 | Per-process CPU/memory | `backend/agent.py` | OS | Process accounting (psutil) | All dev backends share one machine, so system-wide CPU would be identical for each; the agent reports its own process's CPU (divided by core count to get 0–100) and memory. |
 | Spoofable UDP | `lb/heartbeat.py` | Security | Unauthenticated datagrams | Anyone can forge a UDP source, so the listener binds to loopback and ignores unknown backends; a real system would HMAC-sign heartbeats. |
-| Connection pooling | `lb/connection_pool.py`, `lb/proxy.py` | CN / OS | HTTP/1.1 keep-alive, 3-way handshake, TIME_WAIT | Reusing a persistent backend connection skips the SYN / SYN-ACK / ACK round trip, the socket + fd setup, the backend's thread-per-connection start, and the TIME_WAIT socket each close leaves behind. Measured (loopback, 0 ms backends, `experiments/results/pooling_benchmark.md`): 3629 → 4880 req/s at 1 client (+34%), 5495 → 6740 at 8 (+23%), 5301 → 6800 at 32 (+28%, p95 7.9 → 5.8 ms); backend connections per 1000 requests 1000 → 0.2–1.5; TIME_WAIT sockets on backend ports ~14k → ~60. One loopback connect costs ~33 µs median; on a real network add one full RTT per handshake. |
+| Connection pooling | `lb/connection_pool.py`, `lb/proxy.py` | CN / OS | HTTP/1.1 keep-alive, 3-way handshake, TIME_WAIT | Reusing a persistent backend connection skips the SYN / SYN-ACK / ACK round trip, the socket + fd setup, the backend's thread-per-connection start, and the TIME_WAIT socket each close leaves behind. Measured (loopback, 0 ms backends, `experiments/results/pooling_benchmark.md`): 3696 → 4782 req/s at 1 client (+29%), 5514 → 7273 at 8 (+32%), 5379 → 7261 at 32 (+35%, p95 7.1 → 5.1 ms); backend connections per 1000 requests 1000 → 0.2–1.4; TIME_WAIT sockets on backend ports ~14k → ~60. Re-measured in Phase 4 after the TCP_NODELAY fix below (before it: +34% / +23% / +28%). One loopback connect costs ~31 µs median; on a real network add one full RTT per handshake. |
 | Stale pooled connections | `lb/connection_pool.py` (`peer_closed`) | CN | FIN detection with `MSG_PEEK` | Before reusing an idle connection, a non-blocking `recv(1, MSG_PEEK)`: `b""` means the backend already sent FIN (closed it), so it is discarded; LIFO reuse + an idle timeout keep old ones from piling up. The peek can still race with a close that happens right after it, so if a reused connection fails before a single response byte arrives, a GET/HEAD is resent once on a fresh connection to the same backend (a POST is not: the backend may have processed it). |
+| Nagle's algorithm vs delayed ACK | `backend/app.py`, `lb/connection_pool.py` | CN | TCP_NODELAY | Nagle holds a small write until the previous one is ACKed; the receiver delays ACKs (up to ~40 ms) hoping to piggyback them. `http.server` writes headers and body separately, so on a long-lived pooled connection every response stalled (found in Phase 4: 71 ms vs 25 ms through the LB to the Docker backends; a fresh connection hid it because Linux ACKs a new connection's first packets at once). Fix: `TCP_NODELAY` on both sides, as nginx, Go and Node do by default. |
 | Message framing for keep-alive | `lb/http_parser.py` (`read_chunked`, `framed_by_close`) | CN | Content-Length vs chunked vs close-delimited | On a reused connection the LB must know exactly where a response ends, so chunked bodies are parsed (sizes in hex, `0` ends) and close-delimited ones mark the connection unreusable. |
 | Idempotent-only retries | `lb/proxy.py` | CN / System design | Idempotency (RFC 9110) | GET/HEAD are retried on a different backend when there was no usable answer; POST never is, because the backend may already have processed it (double charge). An actual HTTP response, even 500, is passed through, not retried. |
 | Exponential backoff | `lb/proxy.py` (`backoff_delay`) | System design | Avoiding retry storms | Waits base, 2·base, 4·base… (capped) between attempts, so a struggling cluster isn't hammered by instant retries. Adding random jitter is the usual next step to de-synchronise clients. |
@@ -70,6 +71,25 @@ Every feature in this project, the file that implements it, and the CS concept i
 | Admin API on its own port | `lb/admin.py` | System design / Security | Control plane vs data plane | Management traffic is separate from client traffic and bound to loopback (no auth). Each admin connection gets its own thread because a DELETE blocks while draining. |
 | Sticky sessions | `lb/router.py` (`sticky_choice`) | System design | Rendezvous (HRW) hashing | Each client IP scores every backend with a hash and picks the highest, so the same IP gets the same backend, and removing one backend moves only its clients (`hash % n` would move almost all). SHA-256, not crc32: crc32 is linear, and measured 50% of 600 clients on one of three backends. |
 | Failover (measured) | `experiments/demo_failover.py`, `experiments/results/failover_demo.md` | System design | Health checks + breaker + retries together | Backend SIGKILLed under ~160 req/s: with retries off, 3 of 3156 requests failed, all in the first second (breaker opened after 3 failures, health checks marked it DOWN ~1 s later); with retries on, 0 errors. After restart it served traffic again within ~1 s (2 passed probes, half-open trials, closed). |
+| Single DB writer thread | `lb/db_writer.py` | OS / DBMS | Producer-consumer, decoupling I/O | Workers only `put()` a record onto Phase 2's `BoundedQueue` (non-blocking, dropped + counted when full); one thread owns the only connection and does all writes, so a slow or dead database never slows a client. |
+| Batched transactions | `lb/db_writer.py` | DBMS | Transactions, commit cost | A batch is written when it has N records or T ms after its first record, as ONE transaction: one round trip and one WAL fsync for ~200 rows instead of 200. Measured (`experiments/results/db_benchmark.md`): one INSERT + COMMIT per row 3,060 rows/s; one transaction but a round trip per row 5,245; `executemany` batches of 10 / 50 / 200 / 1000: 10,087 / 25,514 / 52,512 / 60,800 rows/s. Batch of 200 = **17×** per-row commits; the real writer end to end does 47,209 rows/s, several times what the LB can serve. |
+| ACID in the writer | `lb/db_writer.py` | DBMS | Atomicity, consistency, isolation, durability | Atomic: a batch commits entirely or not at all (a test checks all 300 rows share one `xmin`, the inserting transaction id). Consistent: CHECK/FK constraints reject bad rows. Isolated: readers never see half a batch. Durable: COMMIT returns after the WAL is flushed (`synchronous_commit = on`). |
+| Rollback + SAVEPOINT salvage | `lb/db_writer.py` (`_write_rows_individually`) | DBMS | Savepoints / nested transactions | One bad row aborts the whole transaction, so the batch is rolled back, then retried row by row, each inside a SAVEPOINT (`with conn.transaction()` nested): a failing row rolls back to its savepoint only, the good rows commit, the thread lives on. A test proves no duplicates (the rollback really happened). |
+| Transient vs permanent errors | `lb/db_writer.py` | DBMS / System design | Retry policy, at-least-once delivery | A lost connection is retried with backoff (the batch is still in memory, nothing lost); a data error is not retried (it would fail forever); a missing schema (`UndefinedTable`) is logged once a minute, not as a traceback per batch. If the connection dies after COMMIT but before its reply, the retry duplicates the batch: "at least once", fine for logs. |
+| Surviving a database outage (measured) | `lb/db_writer.py` | System design | Buffering, graceful degradation | Postgres stopped for 6 s under ~1,000 req/s: clients saw no errors and no slowdown (median 7.6–7.9 ms throughout), the queue peaked at 7,483 records, one reconnect, and all 20,010 requests reached the table. Outage tolerated without loss ≈ `queue_size` ÷ request rate (10,000 ≈ 10 s here); beyond that records are dropped and counted, never blocking a client. |
+| Server ids before the batch | `lb/db_writer.py` (`_resolve_servers`) | DBMS | Upsert (`INSERT … ON CONFLICT … RETURNING`) | New backends get their `servers` row in a separate, already-committed transaction, so a batch that later rolls back can't leave the writer caching an id that doesn't exist. `DO UPDATE` (not `DO NOTHING`) so `RETURNING` gives the id on conflict too. |
+| Event time, not write time | `lb/db_writer.py`, `lb/proxy.py` | DBMS / System design | Timestamps, what a latency measures | Each record carries the time the request arrived; the batch may be written up to T ms later, which must not shift the data. `response_time_ms` starts once the whole request has been received, so a slow client upload is not blamed on the backend (a review found a 10 ms backend logged at 1,516 ms behind a 1.5 s upload). |
+| Persisted health checks + heartbeats | `lb/health.py`, `lb/heartbeat.py` | DBMS | Time-series tables | Each probe is two `health_checks` rows (`tcp`, `http`, own latency; NULL on timeout); each heartbeat is a `server_metrics` row; health transitions and admin removal update `servers.status` (`removed` is a soft delete so history keeps valid FKs). |
+| Composite indexes | `db/schema.sql` | DBMS | B-tree index, column order | `(server_id, received_at)`: equality column first, range column second, so "server X, last 15 minutes" is one contiguous slice of the index. Postgres does not index foreign keys automatically. Measured on 1.2M requests / 2.07M heartbeats: dashboard views 19–34 ms → 0.43–0.74 ms (26–78×); training-export sample 10.8 s → 0.27 ms; whole export of 1.19M rows 2.8 s. Cost: 36 MB + 62 MB of index, built in ~0.5 s each, maintained on every insert (the insert numbers above already include both indexes). |
+| EXPLAIN ANALYZE | `experiments/benchmark_db.py`, `experiments/results/db_benchmark.md` | DBMS | Query plans | Shows the plan the planner chose *and* what actually happened (rows, time, buffers read). Before: Seq Scan over every row + filter; after: Index Scan reading only matching rows. See "Indexes: before and after" below. |
+| Index-friendly query shape | `db/queries.sql` | DBMS | Join order, nested loop | Views start from `servers` (3 rows) and join `requests ON server_id = s.id AND received_at >= …`, so the planner can run one index range scan per server (nested loop) instead of scanning 1.2M rows. |
+| Views | `db/queries.sql` | DBMS | Views (virtual tables) | A stored, named SELECT run on every read (not cached; that would be a materialized view). The dashboard and ML code use the names, so the SQL lives in one place. |
+| `LEFT JOIN … ON` vs `WHERE` | `db/queries.sql` | DBMS | Outer joins | Putting the time filter in `ON` keeps servers with no recent traffic (0 requests); in `WHERE` it would silently turn the outer join into an inner one and hide them. |
+| `LATERAL` join ("latest row before") | `db/queries.sql` (`training_data`) | DBMS | Correlated subquery, top-1 per row | For each request, `LATERAL (… WHERE server_id = r.server_id AND recorded_at <= r.received_at ORDER BY recorded_at DESC LIMIT 1)` picks the newest earlier heartbeat. With the index that is one probe per request; without, a full scan per request. |
+| Percentiles in SQL | `db/queries.sql` | DBMS / Statistics | Ordered-set aggregates | `percentile_cont(0.95) WITHIN GROUP (ORDER BY response_time_ms)` sorts each group and interpolates; a test checks 1..20 ms gives p95 = 19.05. `FILTER (WHERE …)` counts errors inside the same aggregate pass. |
+| Batched retention | `scripts/retention.py` | DBMS | Long transactions, locking, MVCC bloat | Deleting 7-day-old rows 5000 per transaction keeps locks short, WAL small and lets autovacuum reclaim space; one huge DELETE holds every row lock to the end, bloats the table and loses everything if it fails. Measured on 150k requests (one day): batches of 5000 median 12–14 ms per transaction on a quiet database (67 ms right after the 1.2M-row bulk load, while Postgres was checkpointing it), longest 88–122 ms; one DELETE held all 150k rows for 191 ms and grows with the delete size, a batch does not. Batching is slower in total (1.35 s vs 0.19 s): it trades throughput for short locks. A review of the first version found each batch rescanning rows earlier batches had deleted (65 → 213 ms per batch, worse than one DELETE); keyset pagination (`id > last_deleted`) fixed it. |
+| Separate test and benchmark databases | `tests/conftest.py`, `experiments/benchmark_db.py` | DBMS / Testing | Isolation of test data | Tests and benchmarks create their own database (`CREATE DATABASE` needs autocommit: it can't run in a transaction) with the real schema, so they never touch development data. |
+| `now()` is per transaction | `tests/test_queries.py` | DBMS | Transaction timestamps | `now()` returns the transaction's start time, so in autocommit each statement gets its own; a test inserting "5 s ago" rows in separate statements got 5001 ms. Inside one transaction all `now()` calls agree. |
 
 ## Deadlock prevention: lock order
 
@@ -86,10 +106,75 @@ Locks in the load balancer:
 | `ConnectionPool._lock` | `lb/connection_pool.py` | idle connection stacks and counters |
 | `RateLimiter._lock` | `lb/rate_limiter.py` | the per-IP token buckets |
 | `RoundRobinStrategy._lock` | `lb/strategies/round_robin.py` | the round-robin counter |
+| `DBWriter._counters_lock` | `lb/db_writer.py` | the writer's counters (its queue is a `BoundedQueue`, first row) |
 
 A deadlock needs all four Coffman conditions: mutual exclusion, hold-and-wait, no preemption, and **circular wait** (thread 1 holds A and waits for B while thread 2 holds B and waits for A). We break circular wait:
 
 1. Today no code path holds two of these locks at the same time (each critical section is a few lines and calls nothing that locks), so hold-and-wait never happens either. Phase 3 keeps this on purpose: `Router.acquire()` reads candidates under the router lock, *releases it*, and only then asks each circuit breaker (its own lock) and the strategy (its own lock); the health checker asks the router for initial health *before* taking its own lock.
-2. If a later phase needs two at once, it must take them in the order of the table above (queue → handlers → router → health → breaker → stats → pool → rate limiter → strategy) and release in reverse. With one global order every thread waits only "downwards", so no cycle can form.
+2. If a later phase needs two at once, it must take them in the order of the table above (queue → handlers → router → health → breaker → stats → pool → rate limiter → strategy → DB writer counters) and release in reverse. With one global order every thread waits only "downwards", so no cycle can form.
 3. Never log, block on I/O, or call user code while holding a lock: `logging` has its own internal lock, and a slow call while holding a lock stalls every other thread that needs it.
 4. `ReadWriteLock` is not reentrant: upgrading read → write in the same thread deadlocks with itself, so code takes the write lock from the start when it might write.
+
+## Indexes: before and after (EXPLAIN ANALYZE, 1.2M requests)
+
+Measured by `python -m experiments.benchmark_db` in a throwaway database: 1,200,000 requests and 2,073,603 server_metrics rows over 8 days, 3 servers, PostgreSQL 16 in Docker Desktop with default settings. Each query was run 3× with `EXPLAIN (ANALYZE, BUFFERS)`; times are medians. Full plans: `experiments/results/db_benchmark.md`.
+
+| Query | Without indexes | With indexes | Speed-up |
+|---|---:|---:|---:|
+| p95 / avg latency per server per minute, last 15 min | 19.51 ms | 0.74 ms | 26× |
+| Error rate per server, last 15 min | 34.48 ms | 0.44 ms | 78× |
+| Request count per server, last 15 min | 19.07 ms | 0.43 ms | 44× |
+| Training export, latest 100 requests (LATERAL join) | 10,822 ms | 0.27 ms | 40,083× |
+
+**Dashboard: latency per server per minute.** Without the index the only way to find "the last 15 minutes" is to read every row:
+
+```
+Parallel Seq Scan on requests r  (actual rows=509 loops=3)
+  Filter: (received_at >= (now() - '00:15:00'::interval))
+  Rows Removed by Filter: 399491          <- per worker: ~1.2M rows read to keep 1,527
+  Buffers: shared hit=288 read=13349      <- ~13,600 pages (~106 MB) touched
+Execution Time: 19.510 ms
+```
+
+With `requests (server_id, received_at)` the planner loops over the 3 servers and, for each, jumps straight to that server's last 15 minutes in the index:
+
+```
+Nested Loop
+  ->  Index Scan using servers_pkey on servers s          (rows=3)
+  ->  Bitmap Heap Scan on requests r                      (rows=483 loops=3)
+        ->  Bitmap Index Scan on requests_server_received_idx
+              Index Cond: ((server_id = s.id) AND (received_at >= (now() - '00:15:00'::interval)))
+Buffers: shared hit=71                    <- 71 pages instead of ~13,600
+Execution Time: 0.714 ms
+```
+
+In plain words: a B-tree keeps entries sorted by (server_id, received_at), so all of one server's rows sit together in time order and "server 2, after 10:45" is one contiguous slice: find its start (a few page reads down the tree), read until it ends. The query is written to start from `servers` precisely so the planner can use the index once per server. It is "only" 26× here because the whole 1.2M-row table fits in RAM and 2 parallel workers scan it in 19 ms; the gap grows with the table, since the seq scan grows with *all* rows while the index scan grows only with the rows in the window.
+
+**Training export: the latest heartbeat before each request.** Without `server_metrics (server_id, recorded_at)`, the LATERAL subquery has to scan and sort the metrics table once *per request*:
+
+```
+Nested Loop Left Join  (rows=100)
+  ->  Index Scan Backward using requests_pkey on requests r      (rows=100)
+  ->  Limit -> Sort (top-N heapsort)                             (loops=100)
+        ->  Seq Scan on server_metrics  (actual rows=691166 loops=100)
+              Filter: ((recorded_at <= r.received_at) AND (server_id = r.server_id))
+              Rows Removed by Filter: 1382437
+Buffers: shared hit=16005 read=1922000    <- ~1.9 million page reads for 100 rows
+Execution Time: 13777.920 ms
+```
+
+With the index it is one probe per request: go to (this server, this time) in the index and step back one entry, which is the newest heartbeat before the request:
+
+```
+Nested Loop Left Join  (rows=100)
+  ->  Index Scan Backward using requests_pkey on requests r      (rows=100)
+  ->  Limit  (loops=100)
+        ->  Index Scan Backward using server_metrics_server_recorded_idx on server_metrics  (rows=1 loops=100)
+              Index Cond: ((server_id = r.server_id) AND (recorded_at <= r.received_at))
+Buffers: shared hit=405                   <- 4 pages per request
+Execution Time: 0.267 ms
+```
+
+That turns the full export from impractical into 2.8 s (measured). Without the index it was not run: at the measured ~108 ms per request, 1.19M requests works out to roughly 36 hours (arithmetic, not a measurement; the planner's own cost estimate was 61 billion units).
+
+**What indexes cost.** 36 MB + 62 MB of disk, and every INSERT must also update both B-trees (the insert benchmark ran with both indexes present). Postgres does not create indexes on foreign-key columns by itself; they are added where a query needs them, and the `EXPLAIN ANALYZE` above is how you show they are needed.

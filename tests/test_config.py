@@ -114,3 +114,35 @@ def test_bad_phase_3_values_raise_value_error(tmp_path, content):
     path.write_text(content)
     with pytest.raises(ValueError):
         load_lb_config(path)
+
+
+def test_database_section_is_read_and_off_by_default(tmp_path):
+    path = tmp_path / "lb.toml"
+    path.write_text("")
+    assert load_lb_config(path).database.enabled is False  # minimal configs never touch a database
+    path.write_text("[database]\nenabled = true\nbatch_size = 50\nflush_interval_ms = 20\n")
+    db = load_lb_config(path).database
+    assert (db.enabled, db.batch_size, db.flush_interval_ms) == (True, 50, 20)
+    assert load_lb_config(DEFAULT_LB_CONFIG).database.enabled is True
+
+
+@pytest.mark.parametrize("content", [
+    "[database]\nbatch_size = 0", "[database]\nflush_interval_ms = 0", "[database]\nqueue_size = -1",
+    "[database]\nshutdown_timeout = -1", "[database]\nbatch_size = 2.5", "[database]\nflush_ms = 5",
+])
+def test_bad_database_values_raise_value_error(tmp_path, content):
+    path = tmp_path / "lb.toml"
+    path.write_text(content)
+    with pytest.raises(ValueError):
+        load_lb_config(path)
+
+
+
+def test_seed_script_refuses_the_main_database():
+    import subprocess
+    import sys
+    from lb.config import PROJECT_ROOT
+    result = subprocess.run([sys.executable, "scripts/seed_db.py", "--dbname", "adaptive_lb", "--requests", "1"],
+                            cwd=PROJECT_ROOT, capture_output=True, text=True,
+                            env={**__import__("os").environ, "POSTGRES_DB": "adaptive_lb"})
+    assert result.returncode != 0 and "main database" in result.stderr

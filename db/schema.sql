@@ -2,9 +2,8 @@
 --
 -- Normalised to 3NF: each table describes one entity, keyed by a surrogate id,
 -- and other tables refer to it by foreign key instead of copying its columns.
--- Performance indexes on requests / server_metrics are intentionally NOT here
--- yet; they are added in Phase 4 so their effect can be measured with
--- EXPLAIN ANALYZE.
+-- The two performance indexes at the end were added in Phase 4; their effect
+-- (EXPLAIN ANALYZE before/after on 1M+ rows) is recorded in CONCEPTS.md.
 --
 -- Idempotent: safe to run more than once (CREATE ... IF NOT EXISTS).
 
@@ -81,3 +80,14 @@ CREATE TABLE IF NOT EXISTS run_results (
     error_rate      DOUBLE PRECISION NOT NULL CHECK (error_rate BETWEEN 0 AND 1),
     throughput_rps  DOUBLE PRECISION NOT NULL CHECK (throughput_rps >= 0)
 );
+
+-- Performance indexes (Phase 4). Postgres does NOT index foreign-key columns
+-- automatically, so without these every "requests of server X in the last 15
+-- minutes" or "latest metrics of server X before time t" reads the whole table.
+-- Column order matters: equality column first (server_id), range/sort column
+-- second (time), so one index range scan finds exactly the rows wanted, already
+-- in time order.
+CREATE INDEX IF NOT EXISTS requests_server_received_idx
+    ON requests (server_id, received_at);
+CREATE INDEX IF NOT EXISTS server_metrics_server_recorded_idx
+    ON server_metrics (server_id, recorded_at);

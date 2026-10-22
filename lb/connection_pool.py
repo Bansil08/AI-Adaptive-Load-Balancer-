@@ -107,6 +107,9 @@ class ConnectionPool:
         """Always a brand-new connection (never one from the pool)."""
         # create_connection resolves the name and performs the TCP 3-way handshake.
         sock = socket.create_connection((backend.host, backend.port), timeout=self.connect_timeout)
+        # Nagle off: on a long-lived connection, the small last segment of a
+        # large request body would otherwise wait for the backend's (delayed) ACK.
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         with self._lock:
             self._created += 1
         return PooledConnection(sock, reused=False)

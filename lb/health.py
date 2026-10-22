@@ -21,11 +21,15 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from lb.config import HealthSettings
 from lb.http_parser import ParseError, SocketReader, read_response
 from lb.router import Router
 from lb.strategies.base import Backend
+
+if TYPE_CHECKING:
+    from lb.db_writer import DBWriter
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +40,10 @@ class ProbeResult:
     http_ok: bool       # False when TCP failed (not attempted)
     latency_ms: float   # time for the whole probe
     error: str = ""
+    # Per level, for the health_checks table. None = timed out (or, for
+    # HTTP, not attempted because TCP failed): there is no time to report.
+    tcp_ms: float | None = None
+    http_ms: float | None = None
 
     @property
     def passed(self) -> bool:
@@ -73,13 +81,17 @@ def probe(backend: Backend, settings: HealthSettings) -> ProbeResult:
     """One TCP + HTTP probe over a new connection."""
     started = time.perf_counter()
 
-    def elapsed() -> float:
-        return (time.perf_counter() - started) * 1000
+    def ms_since(t: float) -> float:
+        return (time.perf_counter() - t) * 1000
 
     try:
         sock = socket.create_connection((backend.host, backend.port), timeout=settings.timeout)
-    except OSError as exc:  # refused, unreachable, or timed out (TimeoutError is an OSError)
-        return ProbeResult(False, False, elapsed(), f"tcp: {exc}")
+    except TimeoutError as exc:
+        return ProbeResult(False, False, ms_since(started), f"tcp: {exc or 'timed out'}")
+    except OSError as exc:  # refused or unreachable: fails fast, with a real time
+        return ProbeResult(False, False, ms_since(started), f"tcp: {exc}", tcp_ms=ms_since(started))
+    tcp_ms = ms_since(started)
+    http_started = time.perf_counter()
     with sock:
         try:
             request = (f"GET {settings.path} HTTP/1.1\r\nHost: {backend}\r\n"
@@ -89,19 +101,26 @@ def probe(backend: Backend, settings: HealthSettings) -> ProbeResult:
             # can't stretch a probe (and the probe round) far past the timeout.
             reader = SocketReader(sock, deadline=time.monotonic() + settings.timeout)
             response = read_response(reader, "GET", max_body=64 * 1024)
+        except TimeoutError as exc:
+            return ProbeResult(True, False, ms_since(started), f"http: {exc or 'timed out'}", tcp_ms=tcp_ms)
         except (OSError, ParseError) as exc:
-            return ProbeResult(True, False, elapsed(), f"http: {exc}")
+            return ProbeResult(True, False, ms_since(started), f"http: {exc}", tcp_ms=tcp_ms,
+                               http_ms=ms_since(http_started))
+    http_ms = ms_since(http_started)
     if response.status_code != 200:
-        return ProbeResult(True, False, elapsed(), f"http: status {response.status_code}")
-    return ProbeResult(True, True, elapsed())
+        return ProbeResult(True, False, ms_since(started), f"http: status {response.status_code}",
+                           tcp_ms=tcp_ms, http_ms=http_ms)
+    return ProbeResult(True, True, ms_since(started), tcp_ms=tcp_ms, http_ms=http_ms)
 
 
 class HealthChecker:
     """Background thread that probes every backend in the router each round."""
 
-    def __init__(self, router: Router, settings: HealthSettings = HealthSettings()):
+    def __init__(self, router: Router, settings: HealthSettings = HealthSettings(),
+                 db: "DBWriter | None" = None):
         self.router = router
         self.settings = settings
+        self.db = db  # optional: persist every probe into health_checks (Phase 4)
         self._states: dict[Backend, HealthState] = {}
         self._states_lock = threading.Lock()  # admin API reads states while the checker writes
         self._stop = threading.Event()
@@ -126,14 +145,23 @@ class HealthChecker:
             # disagrees with the router (removed and re-added between rounds,
             # so the router says down while we still say up) starts over;
             # otherwise no transition would ever fire and it would stay down.
-            self._states = {
-                b: kept if (kept := self._states.get(b)) and kept.healthy == initial[b] else HealthState(initial[b])
-                for b in backends
-            }
+            new = [b for b in backends
+                   if not ((kept := self._states.get(b)) and kept.healthy == initial[b])]
+            self._states = {b: HealthState(initial[b]) if b in new else self._states[b] for b in backends}
+        if self.db:
+            # servers.status otherwise only changes on a transition, so a row
+            # left at 'down' or 'removed' by an earlier run would never be
+            # corrected for a backend that starts (optimistically) up.
+            for b in new:
+                self.db.log_status(b, "up" if initial[b] else "down")
         for backend in backends:
             if self._stop.is_set():
                 return
             result = probe(backend, self.settings)
+            if self.db:
+                self.db.log_health_check(backend, "tcp", result.tcp_ok, result.tcp_ms)
+                if result.tcp_ok:  # HTTP is only attempted over a working TCP connection
+                    self.db.log_health_check(backend, "http", result.http_ok, result.http_ms)
             with self._states_lock:
                 state = self._states.get(backend)
                 changed = state is not None and state.record(result, self.settings)
@@ -141,6 +169,8 @@ class HealthChecker:
             if changed:
                 # Logged and applied outside our lock: never call out while holding it.
                 self.router.set_healthy(backend, healthy)
+                if self.db:
+                    self.db.log_status(backend, "up" if healthy else "down")
                 if healthy:
                     log.warning("backend %s is UP (%d consecutive passed checks)",
                                 backend, self.settings.healthy_threshold)

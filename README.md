@@ -2,7 +2,7 @@
 
 An HTTP load balancer built on raw sockets and threads in Python. It routes traffic across backends of different speeds using round robin, least connections and two ML-based strategies, performs health checks and failover, logs every request to PostgreSQL, and includes an experiment harness that compares the strategies under different traffic scenarios.
 
-> **Status:** Phase 3 (health checks, circuit breaker, UDP heartbeats, connection pooling, retries, rate limiting, admin API). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
+> **Status:** Phase 4 (request / health / metrics logging to PostgreSQL with a batching writer thread, indexes, dashboard views, retention). See `PROJECT_SPEC.md` for the full plan and `CONCEPTS.md` for the feature → CS concept map.
 
 ## Prerequisites
 
@@ -26,8 +26,8 @@ docker compose ps          # STATUS should say "(healthy)"
 # Postgres is exposed on host port 5433 (set in .env) to avoid clashing
 # with a locally installed Postgres on the default 5432.
 
-# 4. Create the tables
-python scripts/init_db.py  # creates missing tables; safe to re-run
+# 4. Create the tables, indexes and views
+python scripts/init_db.py  # creates whatever is missing; safe to re-run
 # After editing schema.sql, use --reset (drops all data): IF NOT EXISTS
 # never alters a table that already exists.
 
@@ -70,6 +70,23 @@ curl -s localhost:8081/backends                                          # healt
 curl -s -X POST localhost:8081/backends -d '{"address": "127.0.0.1:9004"}' # joins after passing health checks
 curl -s -X DELETE localhost:8081/backends/127.0.0.1:9004                 # drains in-flight requests, then removes
 ```
+
+### Request log in PostgreSQL (Phase 4)
+
+With `[database] enabled = true` (as in `lb.toml`), every request, every health check and every heartbeat is written to Postgres by one background writer thread, in batches (`batch_size` records or `flush_interval_ms`, whichever comes first, one transaction per batch). Workers never wait for the database: if it is slow or down they keep serving and the queue absorbs the gap (`GET /backends` on the admin port shows the writer's counters). On shutdown the queue is flushed.
+
+```bash
+docker exec -it adaptive-lb-postgres psql -U adaptive_lb -d adaptive_lb   # then, for example:
+SELECT * FROM dashboard_latency_per_minute;    -- p95 / avg per server per minute, last 15 min
+SELECT * FROM dashboard_error_rate;            -- 5xx rate per server (+ requests no backend served)
+SELECT * FROM dashboard_requests_per_server;   -- request and retry counts per server
+SELECT * FROM training_data LIMIT 5;           -- each request + the latest heartbeat before it (Phase 6)
+
+python scripts/retention.py            # delete rows older than 7 days, 5000 per transaction (run from cron)
+python -m experiments.benchmark_db     # ~5 min, in a throwaway database: inserts, indexes, retention
+```
+
+The benchmark results (batched vs single-row inserts, `EXPLAIN ANALYZE` with and without the indexes on 1.2M rows, batched vs single retention DELETE) are in `experiments/results/db_benchmark.md`.
 
 ### Failover demo
 

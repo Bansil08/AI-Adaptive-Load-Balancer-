@@ -1,0 +1,210 @@
+{
+  "measured_at": "2026-10-22 02:14 UTC",
+  "setup": {
+    "machine": "Darwin 25.1.0 arm64",
+    "python": "3.14.3",
+    "psycopg": "3.3.6",
+    "postgres": "PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2)",
+    "shared_buffers": "128MB",
+    "synchronous_commit": "on",
+    "rows": {
+      "requests": 1200000,
+      "server_metrics": 2073603,
+      "health_checks": 2073606
+    },
+    "days": 8,
+    "repeats": 3
+  },
+  "inserts": [
+    {
+      "method": "one INSERT + COMMIT per row",
+      "rows": 3000,
+      "rows_per_s": [
+        3286,
+        3060,
+        2925
+      ],
+      "median_rows_per_s": 3060
+    },
+    {
+      "method": "one INSERT per row, one transaction",
+      "rows": 20000,
+      "rows_per_s": [
+        5036,
+        5323,
+        5245
+      ],
+      "median_rows_per_s": 5245
+    },
+    {
+      "method": "executemany, batch of 10 per transaction",
+      "rows": 50000,
+      "rows_per_s": [
+        11040,
+        10087,
+        9819
+      ],
+      "median_rows_per_s": 10087
+    },
+    {
+      "method": "executemany, batch of 50 per transaction",
+      "rows": 50000,
+      "rows_per_s": [
+        25514,
+        24155,
+        25613
+      ],
+      "median_rows_per_s": 25514
+    },
+    {
+      "method": "executemany, batch of 200 per transaction",
+      "rows": 50000,
+      "rows_per_s": [
+        52512,
+        52706,
+        47450
+      ],
+      "median_rows_per_s": 52512
+    },
+    {
+      "method": "executemany, batch of 1000 per transaction",
+      "rows": 50000,
+      "rows_per_s": [
+        60085,
+        68557,
+        60800
+      ],
+      "median_rows_per_s": 60800
+    },
+    {
+      "method": "DBWriter end to end (batch 200, 200 ms)",
+      "rows": 100000,
+      "rows_per_s": [
+        45184,
+        47209,
+        48664
+      ],
+      "median_rows_per_s": 47209
+    }
+  ],
+  "indexes": {
+    "before": {
+      "p95/avg latency per server per minute (15 min)": {
+        "median_ms": 19.51,
+        "runs_ms": [
+          20.31,
+          19.511,
+          19.51
+        ],
+        "plan": "GroupAggregate  (cost=8568.61..23802.87 rows=1496 width=116) (actual time=18.698..19.492 rows=45 loops=1)\n  Group Key: s.id, (((s.address || ':'::text) || (s.port)::text)), (date_trunc('minute'::text, r.received_at))\n  Buffers: shared hit=290 read=13349 written=96\n  ->  Incremental Sort  (cost=8568.61..23724.33 rows=1496 width=52) (actual time=18.682..19.252 rows=1511 loops=1)\n        Sort Key: s.id, (((s.address || ':'::text) || (s.port)::text)), (date_trunc('minute'::text, r.received_at))\n        Presorted Key: s.id\n        Full-sort Groups: 3  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB\n        Pre-sorted Groups: 3  Sort Method: quicksort  Average Memory: 56kB  Peak Memory: 56kB\n        Buffers: shared hit=290 read=13349 written=96\n        ->  Nested Loop  (cost=1000.13..23638.53 rows=1496 width=52) (actual time=18.282..18.928 rows=1511 loops=1)\n              Join Filter: (s.id = r.server_id)\n              Rows Removed by Join Filter: 3070\n              Buffers: shared hit=290 read=13349 written=96\n              ->  Index Scan using servers_pkey on servers s  (cost=0.13..12.18 rows=3 width=18) (actual time=0.001..0.004 rows=3 loops=1)\n                    Buffers: shared hit=2\n              ->  Materialize  (cost=1000.00..23544.08 rows=1496 width=20) (actual time=6.092..6.185 rows=1527 loops=3)\n                    Buffers: shared hit=288 read=13349 written=96\n                    ->  Gather  (cost=1000.00..23536.60 rows=1496 width=20) (actual time=18.273..18.382 rows=1527 loops=1)\n                          Workers Planned: 2\n                          Workers Launched: 2\n                          Buffers: shared hit=288 read=13349 written=96\n                          ->  Parallel Seq Scan on requests r  (cost=0.00..22387.00 rows=623 width=20) (actual time=17.495..17.536 rows=509 loops=3)\n                                Filter: (received_at >= (now() - '00:15:00'::interval))\n                                Rows Removed by Filter: 399491\n                                Buffers: shared hit=288 read=13349 written=96\nPlanning:\n  Buffers: shared hit=4\nPlanning Time: 0.113 ms\nExecution Time: 19.510 ms"
+      },
+      "error rate per server (15 min)": {
+        "median_ms": 34.48,
+        "runs_ms": [
+          34.633,
+          34.48,
+          34.451
+        ],
+        "plan": "Append  (cost=8567.36..47126.70 rows=4 width=84) (actual time=18.756..34.431 rows=4 loops=1)\n  Buffers: shared hit=1634 read=25642 written=192\n  ->  GroupAggregate  (cost=8567.36..23739.39 rows=3 width=84) (actual time=18.756..19.047 rows=3 loops=1)\n        Group Key: s.id, (((s.address || ':'::text) || (s.port)::text))\n        Buffers: shared hit=770 read=12869 written=96\n        ->  Incremental Sort  (cost=8567.36..23720.59 rows=1496 width=46) (actual time=18.544..18.944 rows=1511 loops=1)\n              Sort Key: s.id, (((s.address || ':'::text) || (s.port)::text))\n              Presorted Key: s.id\n              Full-sort Groups: 3  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB\n              Pre-sorted Groups: 3  Sort Method: quicksort  Average Memory: 56kB  Peak Memory: 56kB\n              Buffers: shared hit=770 read=12869 written=96\n              ->  Nested Loop Left Join  (cost=1000.13..23634.79 rows=1496 width=46) (actual time=18.237..18.794 rows=1511 loops=1)\n                    Join Filter: (r.server_id = s.id)\n                    Rows Removed by Join Filter: 3070\n                    Buffers: shared hit=770 read=12869 written=96\n                    ->  Index Scan using servers_pkey on servers s  (cost=0.13..12.18 rows=3 width=18) (actual time=0.001..0.003 rows=3 loops=1)\n                          Buffers: shared hit=2\n                    ->  Materialize  (cost=1000.00..23544.08 rows=1496 width=14) (actual time=6.077..6.167 rows=1527 loops=3)\n                          Buffers: shared hit=768 read=12869 written=96\n                          ->  Gather  (cost=1000.00..23536.60 rows=1496 width=14) (actual time=18.231..18.335 rows=1527 loops=1)\n                                Workers Planned: 2\n                                Workers Launched: 2\n                                Buffers: shared hit=768 read=12869 written=96\n                                ->  Parallel Seq Scan on requests r  (cost=0.00..22387.00 rows=623 width=14) (actual time=17.482..17.520 rows=509 loops=3)\n                                      Filter: (received_at >= (now() - '00:15:00'::interval))\n                                      Rows Removed by Filter: 399491\n                                      Buffers: shared hit=768 read=12869 written=96\n  ->  Finalize Aggregate  (cost=23387.27..23387.29 rows=1 width=84) (actual time=14.631..15.382 rows=1 loops=1)\n        Buffers: shared hit=864 read=12773 written=96\n        ->  Gather  (cost=23387.05..23387.26 rows=2 width=16) (actual time=14.588..15.378 rows=3 loops=1)\n              Workers Planned: 2\n              Workers Launched: 2\n              Buffers: shared hit=864 read=12773 written=96\n              ->  Partial Aggregate  (cost=22387.05..22387.06 rows=1 width=16) (actual time=13.781..13.781 rows=1 loops=3)\n                    Buffers: shared hit=864 read=12773 written=96\n                    ->  Parallel Seq Scan on requests  (cost=0.00..22387.00 rows=7 width=2) (actual time=13.763..13.778 rows=5 loops=3)\n                          Filter: ((server_id IS NULL) AND (received_at >= (now() - '00:15:00'::interval)))\n                          Rows Removed by Filter: 399995\n                          Buffers: shared hit=864 read=12773 written=96\nPlanning:\n  Buffers: shared hit=4\nPlanning Time: 0.110 ms\nExecution Time: 34.451 ms"
+      },
+      "request count per server (15 min)": {
+        "median_ms": 19.07,
+        "runs_ms": [
+          19.072,
+          19.006,
+          19.173
+        ],
+        "plan": "GroupAggregate  (cost=8567.36..23735.61 rows=3 width=55) (actual time=18.762..19.158 rows=3 loops=1)\n  Group Key: s.id, (((s.address || ':'::text) || (s.port)::text))\n  Buffers: shared hit=1154 read=12485 written=96\n  ->  Incremental Sort  (cost=8567.36..23720.59 rows=1496 width=48) (actual time=18.542..19.049 rows=1511 loops=1)\n        Sort Key: s.id, (((s.address || ':'::text) || (s.port)::text))\n        Presorted Key: s.id\n        Full-sort Groups: 3  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB\n        Pre-sorted Groups: 3  Sort Method: quicksort  Average Memory: 56kB  Peak Memory: 56kB\n        Buffers: shared hit=1154 read=12485 written=96\n        ->  Nested Loop Left Join  (cost=1000.13..23634.79 rows=1496 width=48) (actual time=18.209..18.880 rows=1511 loops=1)\n              Join Filter: (r.server_id = s.id)\n              Rows Removed by Join Filter: 3070\n              Buffers: shared hit=1154 read=12485 written=96\n              ->  Index Scan using servers_pkey on servers s  (cost=0.13..12.18 rows=3 width=21) (actual time=0.001..0.003 rows=3 loops=1)\n                    Buffers: shared hit=2\n              ->  Materialize  (cost=1000.00..23544.08 rows=1496 width=13) (actual time=6.068..6.196 rows=1527 loops=3)\n                    Buffers: shared hit=1152 read=12485 written=96\n                    ->  Gather  (cost=1000.00..23536.60 rows=1496 width=13) (actual time=18.203..18.416 rows=1527 loops=1)\n                          Workers Planned: 2\n                          Workers Launched: 2\n                          Buffers: shared hit=1152 read=12485 written=96\n                          ->  Parallel Seq Scan on requests r  (cost=0.00..22387.00 rows=623 width=13) (actual time=17.412..17.457 rows=509 loops=3)\n                                Filter: (received_at >= (now() - '00:15:00'::interval))\n                                Rows Removed by Filter: 399491\n                                Buffers: shared hit=1152 read=12485 written=96\nPlanning:\n  Buffers: shared hit=6\nPlanning Time: 0.097 ms\nExecution Time: 19.173 ms"
+      },
+      "training export, latest 100 requests": {
+        "median_ms": 10822.36,
+        "runs_ms": [
+          10781.21,
+          10822.361,
+          13777.92
+        ],
+        "plan": "Limit  (cost=51636.47..5215242.40 rows=100 width=100) (actual time=175.840..13776.755 rows=100 loops=1)\n  Buffers: shared hit=16005 read=1922000\n  ->  Nested Loop Left Join  (cost=51636.47..61312708393.43 rows=1187400 width=100) (actual time=136.852..13737.741 rows=100 loops=1)\n        Buffers: shared hit=16005 read=1922000\n        ->  Index Scan Backward using requests_pkey on requests r  (cost=0.43..44812.43 rows=1187400 width=48) (actual time=0.035..0.214 rows=100 loops=1)\n              Filter: (server_id IS NOT NULL)\n              Rows Removed by Filter: 2\n              Buffers: shared hit=5\n        ->  Limit  (cost=51636.04..51636.05 rows=1 width=28) (actual time=137.370..137.370 rows=1 loops=100)\n              Buffers: shared hit=16000 read=1922000\n              ->  Sort  (cost=51636.04..52212.04 rows=230400 width=28) (actual time=137.368..137.368 rows=1 loops=100)\n                    Sort Key: server_metrics.recorded_at DESC\n                    Sort Method: top-N heapsort  Memory: 25kB\n                    Buffers: shared hit=16000 read=1922000\n                    ->  Seq Scan on server_metrics  (cost=0.00..50484.04 rows=230400 width=28) (actual time=0.003..98.139 rows=691166 loops=100)\n                          Filter: ((recorded_at <= r.received_at) AND (server_id = r.server_id))\n                          Rows Removed by Filter: 1382437\n                          Buffers: shared hit=16000 read=1922000\nPlanning Time: 0.196 ms\nJIT:\n  Functions: 11\n  Options: Inlining true, Optimization true, Expressions true, Deforming true\n  Timing: Generation 0.687 ms, Inlining 6.333 ms, Optimization 17.706 ms, Emission 14.959 ms, Total 39.686 ms\nExecution Time: 13777.920 ms"
+      }
+    },
+    "after": {
+      "p95/avg latency per server per minute (15 min)": {
+        "median_ms": 0.74,
+        "runs_ms": [
+          0.927,
+          0.744,
+          0.714
+        ],
+        "plan": "GroupAggregate  (cost=1605.87..4882.95 rows=1415 width=116) (actual time=0.177..0.705 rows=45 loops=1)\n  Group Key: s.id, (((s.address || ':'::text) || (s.port)::text)), (date_trunc('minute'::text, r.received_at))\n  Buffers: shared hit=71\n  ->  Incremental Sort  (cost=1605.87..4808.66 rows=1415 width=52) (actual time=0.174..0.508 rows=1448 loops=1)\n        Sort Key: s.id, (((s.address || ':'::text) || (s.port)::text)), (date_trunc('minute'::text, r.received_at))\n        Presorted Key: s.id\n        Full-sort Groups: 3  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB\n        Pre-sorted Groups: 3  Sort Method: quicksort  Average Memory: 55kB  Peak Memory: 55kB\n        Buffers: shared hit=71\n        ->  Nested Loop  (cost=13.35..4728.08 rows=1415 width=52) (actual time=0.013..0.344 rows=1448 loops=1)\n              Buffers: shared hit=71\n              ->  Index Scan using servers_pkey on servers s  (cost=0.13..12.18 rows=3 width=18) (actual time=0.001..0.001 rows=3 loops=1)\n                    Buffers: shared hit=2\n              ->  Bitmap Heap Scan on requests r  (cost=13.22..1561.40 rows=467 width=20) (actual time=0.011..0.035 rows=483 loops=3)\n                    Recheck Cond: ((s.id = server_id) AND (received_at >= (now() - '00:15:00'::interval)))\n                    Heap Blocks: exact=54\n                    Buffers: shared hit=69\n                    ->  Bitmap Index Scan on requests_server_received_idx  (cost=0.00..13.10 rows=467 width=0) (actual time=0.010..0.010 rows=483 loops=3)\n                          Index Cond: ((server_id = s.id) AND (received_at >= (now() - '00:15:00'::interval)))\n                          Buffers: shared hit=15\nPlanning:\n  Buffers: shared hit=4\nPlanning Time: 0.049 ms\nExecution Time: 0.714 ms"
+      },
+      "error rate per server (15 min)": {
+        "median_ms": 0.44,
+        "runs_ms": [
+          0.487,
+          0.436,
+          0.442
+        ],
+        "plan": "Append  (cost=4742.23..4799.90 rows=4 width=84) (actual time=0.419..0.426 rows=4 loops=1)\n  Buffers: shared hit=89\n  ->  HashAggregate  (cost=4742.23..4742.32 rows=3 width=84) (actual time=0.419..0.419 rows=3 loops=1)\n        Group Key: s.id, ((s.address || ':'::text) || (s.port)::text)\n        Batches: 1  Memory Usage: 24kB\n        Buffers: shared hit=71\n        ->  Nested Loop Left Join  (cost=13.35..4724.54 rows=1415 width=46) (actual time=0.016..0.285 rows=1448 loops=1)\n              Buffers: shared hit=71\n              ->  Index Scan using servers_pkey on servers s  (cost=0.13..12.18 rows=3 width=18) (actual time=0.001..0.001 rows=3 loops=1)\n                    Buffers: shared hit=2\n              ->  Bitmap Heap Scan on requests r  (cost=13.22..1561.40 rows=467 width=14) (actual time=0.012..0.037 rows=483 loops=3)\n                    Recheck Cond: ((server_id = s.id) AND (received_at >= (now() - '00:15:00'::interval)))\n                    Heap Blocks: exact=54\n                    Buffers: shared hit=69\n                    ->  Bitmap Index Scan on requests_server_received_idx  (cost=0.00..13.10 rows=467 width=0) (actual time=0.011..0.011 rows=483 loops=3)\n                          Index Cond: ((server_id = s.id) AND (received_at >= (now() - '00:15:00'::interval)))\n                          Buffers: shared hit=15\n  ->  Aggregate  (cost=57.54..57.56 rows=1 width=84) (actual time=0.006..0.006 rows=1 loops=1)\n        Buffers: shared hit=18\n        ->  Index Scan using requests_server_received_idx on requests  (cost=0.43..57.43 rows=14 width=2) (actual time=0.002..0.004 rows=15 loops=1)\n              Index Cond: ((server_id IS NULL) AND (received_at >= (now() - '00:15:00'::interval)))\n              Buffers: shared hit=18\nPlanning:\n  Buffers: shared hit=4\nPlanning Time: 0.102 ms\nExecution Time: 0.442 ms"
+      },
+      "request count per server (15 min)": {
+        "median_ms": 0.43,
+        "runs_ms": [
+          0.435,
+          0.433,
+          0.413
+        ],
+        "plan": "HashAggregate  (cost=4738.69..4738.75 rows=3 width=55) (actual time=0.407..0.407 rows=3 loops=1)\n  Group Key: s.id, ((s.address || ':'::text) || (s.port)::text)\n  Batches: 1  Memory Usage: 24kB\n  Buffers: shared hit=71\n  ->  Nested Loop Left Join  (cost=13.35..4724.54 rows=1415 width=48) (actual time=0.012..0.271 rows=1448 loops=1)\n        Buffers: shared hit=71\n        ->  Index Scan using servers_pkey on servers s  (cost=0.13..12.18 rows=3 width=21) (actual time=0.001..0.001 rows=3 loops=1)\n              Buffers: shared hit=2\n        ->  Bitmap Heap Scan on requests r  (cost=13.22..1561.40 rows=467 width=13) (actual time=0.010..0.034 rows=483 loops=3)\n              Recheck Cond: ((server_id = s.id) AND (received_at >= (now() - '00:15:00'::interval)))\n              Heap Blocks: exact=54\n              Buffers: shared hit=69\n              ->  Bitmap Index Scan on requests_server_received_idx  (cost=0.00..13.10 rows=467 width=0) (actual time=0.010..0.010 rows=483 loops=3)\n                    Index Cond: ((server_id = s.id) AND (received_at >= (now() - '00:15:00'::interval)))\n                    Buffers: shared hit=15\nPlanning:\n  Buffers: shared hit=6\nPlanning Time: 0.039 ms\nExecution Time: 0.413 ms"
+      },
+      "training export, latest 100 requests": {
+        "median_ms": 0.27,
+        "runs_ms": [
+          0.305,
+          0.26,
+          0.267
+        ],
+        "plan": "Limit  (cost=0.85..84.27 rows=100 width=100) (actual time=0.009..0.259 rows=100 loops=1)\n  Buffers: shared hit=405\n  ->  Nested Loop Left Join  (cost=0.85..990822.10 rows=1187880 width=100) (actual time=0.009..0.254 rows=100 loops=1)\n        Buffers: shared hit=405\n        ->  Index Scan Backward using requests_pkey on requests r  (cost=0.43..44812.43 rows=1187880 width=48) (actual time=0.003..0.010 rows=100 loops=1)\n              Filter: (server_id IS NOT NULL)\n              Rows Removed by Filter: 2\n              Buffers: shared hit=5\n        ->  Limit  (cost=0.43..0.78 rows=1 width=28) (actual time=0.002..0.002 rows=1 loops=100)\n              Buffers: shared hit=400\n              ->  Index Scan Backward using server_metrics_server_recorded_idx on server_metrics  (cost=0.43..80959.50 rows=230400 width=28) (actual time=0.002..0.002 rows=1 loops=100)\n                    Index Cond: ((server_id = r.server_id) AND (recorded_at <= r.received_at))\n                    Buffers: shared hit=400\nPlanning Time: 0.041 ms\nExecution Time: 0.267 ms"
+      }
+    },
+    "create_index_s": {
+      "requests_server_received_idx": 0.45,
+      "server_metrics_server_recorded_idx": 0.62
+    },
+    "index_size": {
+      "requests_server_received_idx": "36 MB",
+      "server_metrics_server_recorded_idx": "62 MB"
+    },
+    "full_export": {
+      "rows": 1188000,
+      "with_metrics": 1187991,
+      "seconds": 2.79
+    }
+  },
+  "retention": {
+    "tables": {
+      "requests": {
+        "rows": 150104,
+        "batches": 31,
+        "seconds": 1.35,
+        "longest_transaction_ms": 88.1,
+        "median_transaction_ms": 67.4
+      },
+      "health_checks": {
+        "rows": 259350,
+        "batches": 52,
+        "seconds": 0.53,
+        "longest_transaction_ms": 12.1,
+        "median_transaction_ms": 10.1
+      },
+      "server_metrics": {
+        "rows": 259371,
+        "batches": 52,
+        "seconds": 0.58,
+        "longest_transaction_ms": 19.7,
+        "median_transaction_ms": 10.4
+      }
+    },
+    "single_delete": {
+      "rows": 150005,
+      "transaction_ms": 190.9
+    }
+  }
+}

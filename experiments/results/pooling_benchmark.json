@@ -3,7 +3,7 @@
     "no-pool",
     "pool-32"
   ],
-  "measured_at": "2026-10-22 01:14 UTC",
+  "measured_at": "2026-10-22 02:35 UTC",
   "setup": {
     "machine": "Darwin 25.1.0 arm64",
     "cpu_count": 8,
@@ -18,8 +18,8 @@
   },
   "handshake": {
     "count": 2000,
-    "avg_us": 99.5,
-    "median_us": 32.6
+    "avg_us": 99.4,
+    "median_us": 30.8
   },
   "results": [
     {
@@ -27,83 +27,83 @@
       "no-pool": {
         "runs": [
           {
-            "requests_ok": 10840,
+            "requests_ok": 10849,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.0,
-            "throughput_rps": 3613.1,
+            "throughput_rps": 3615.9,
             "avg_latency_ms": 0.3,
             "p95_latency_ms": 0.3,
-            "backend_conns_opened": 10840,
+            "backend_conns_opened": 10849,
             "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 10342
+            "time_wait_backend_ports": 10796
           },
           {
-            "requests_ok": 10925,
+            "requests_ok": 11248,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.0,
-            "throughput_rps": 3641.5,
+            "throughput_rps": 3749.1,
             "avg_latency_ms": 0.3,
             "p95_latency_ms": 0.3,
-            "backend_conns_opened": 10925,
+            "backend_conns_opened": 11248,
             "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 10999
+            "time_wait_backend_ports": 10310
           },
           {
-            "requests_ok": 10918,
+            "requests_ok": 11166,
             "errors": 0,
             "error_kinds": {},
-            "elapsed_s": 3.005,
-            "throughput_rps": 3633.4,
+            "elapsed_s": 3.0,
+            "throughput_rps": 3721.9,
             "avg_latency_ms": 0.3,
             "p95_latency_ms": 0.3,
-            "backend_conns_opened": 10918,
+            "backend_conns_opened": 11166,
             "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 10975
+            "time_wait_backend_ports": 11221
           }
         ],
         "summary": {
-          "throughput_rps": 3629.3,
+          "throughput_rps": 3695.6,
           "avg_latency_ms": 0.3,
           "p95_latency_ms": 0.3,
           "backend_conns_per_1000_requests": 1000.0,
-          "time_wait_backend_ports": 10772.0,
+          "time_wait_backend_ports": 10775.7,
           "errors": 0
         }
       },
       "pool-32": {
         "runs": [
           {
-            "requests_ok": 15997,
+            "requests_ok": 14290,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.0,
-            "throughput_rps": 5332.1,
+            "throughput_rps": 4763.0,
             "avg_latency_ms": 0.2,
             "p95_latency_ms": 0.2,
             "backend_conns_opened": 3,
             "backend_conns_per_1000_requests": 0.2,
-            "time_wait_backend_ports": 52
+            "time_wait_backend_ports": 51
           },
           {
-            "requests_ok": 13911,
+            "requests_ok": 14309,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.0,
-            "throughput_rps": 4636.7,
+            "throughput_rps": 4769.3,
             "avg_latency_ms": 0.2,
             "p95_latency_ms": 0.2,
             "backend_conns_opened": 3,
             "backend_conns_per_1000_requests": 0.2,
-            "time_wait_backend_ports": 49
+            "time_wait_backend_ports": 48
           },
           {
-            "requests_ok": 14016,
+            "requests_ok": 14445,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.0,
-            "throughput_rps": 4671.7,
+            "throughput_rps": 4814.7,
             "avg_latency_ms": 0.2,
             "p95_latency_ms": 0.2,
             "backend_conns_opened": 3,
@@ -112,11 +112,11 @@
           }
         ],
         "summary": {
-          "throughput_rps": 4880.2,
+          "throughput_rps": 4782.3,
           "avg_latency_ms": 0.2,
           "p95_latency_ms": 0.2,
           "backend_conns_per_1000_requests": 0.2,
-          "time_wait_backend_ports": 49.7,
+          "time_wait_backend_ports": 49.0,
           "errors": 0
         }
       }
@@ -126,96 +126,96 @@
       "no-pool": {
         "runs": [
           {
-            "requests_ok": 16598,
+            "requests_ok": 16543,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.001,
-            "throughput_rps": 5530.6,
-            "avg_latency_ms": 1.4,
+            "throughput_rps": 5512.1,
+            "avg_latency_ms": 1.5,
             "p95_latency_ms": 2.0,
-            "backend_conns_opened": 16598,
+            "backend_conns_opened": 16543,
             "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 14823
+            "time_wait_backend_ports": 14851
           },
           {
-            "requests_ok": 16686,
+            "requests_ok": 16470,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.001,
-            "throughput_rps": 5560.2,
-            "avg_latency_ms": 1.4,
-            "p95_latency_ms": 2.0,
-            "backend_conns_opened": 16686,
-            "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 14980
-          },
-          {
-            "requests_ok": 16186,
-            "errors": 0,
-            "error_kinds": {},
-            "elapsed_s": 3.001,
-            "throughput_rps": 5393.7,
+            "throughput_rps": 5488.6,
             "avg_latency_ms": 1.5,
             "p95_latency_ms": 2.1,
-            "backend_conns_opened": 16186,
+            "backend_conns_opened": 16470,
             "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 14534
+            "time_wait_backend_ports": 14765
+          },
+          {
+            "requests_ok": 16627,
+            "errors": 0,
+            "error_kinds": {},
+            "elapsed_s": 3.001,
+            "throughput_rps": 5540.9,
+            "avg_latency_ms": 1.4,
+            "p95_latency_ms": 2.1,
+            "backend_conns_opened": 16627,
+            "backend_conns_per_1000_requests": 1000.0,
+            "time_wait_backend_ports": 14894
           }
         ],
         "summary": {
-          "throughput_rps": 5494.8,
-          "avg_latency_ms": 1.4,
-          "p95_latency_ms": 2.0,
+          "throughput_rps": 5513.9,
+          "avg_latency_ms": 1.5,
+          "p95_latency_ms": 2.1,
           "backend_conns_per_1000_requests": 1000.0,
-          "time_wait_backend_ports": 14779.0,
+          "time_wait_backend_ports": 14836.7,
           "errors": 0
         }
       },
       "pool-32": {
         "runs": [
           {
-            "requests_ok": 20772,
+            "requests_ok": 21772,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.001,
-            "throughput_rps": 6921.8,
-            "avg_latency_ms": 1.2,
-            "p95_latency_ms": 1.7,
-            "backend_conns_opened": 12,
-            "backend_conns_per_1000_requests": 0.6,
+            "throughput_rps": 7255.2,
+            "avg_latency_ms": 1.1,
+            "p95_latency_ms": 1.6,
+            "backend_conns_opened": 10,
+            "backend_conns_per_1000_requests": 0.5,
             "time_wait_backend_ports": 48
           },
           {
-            "requests_ok": 19664,
+            "requests_ok": 21558,
             "errors": 0,
             "error_kinds": {},
-            "elapsed_s": 3.005,
-            "throughput_rps": 6542.7,
-            "avg_latency_ms": 1.2,
-            "p95_latency_ms": 1.8,
+            "elapsed_s": 3.001,
+            "throughput_rps": 7184.2,
+            "avg_latency_ms": 1.1,
+            "p95_latency_ms": 1.6,
             "backend_conns_opened": 11,
-            "backend_conns_per_1000_requests": 0.6,
-            "time_wait_backend_ports": 57
+            "backend_conns_per_1000_requests": 0.5,
+            "time_wait_backend_ports": 55
           },
           {
-            "requests_ok": 20321,
+            "requests_ok": 22148,
             "errors": 0,
             "error_kinds": {},
-            "elapsed_s": 3.008,
-            "throughput_rps": 6754.9,
-            "avg_latency_ms": 1.2,
-            "p95_latency_ms": 1.7,
+            "elapsed_s": 3.001,
+            "throughput_rps": 7380.5,
+            "avg_latency_ms": 1.1,
+            "p95_latency_ms": 1.6,
             "backend_conns_opened": 12,
-            "backend_conns_per_1000_requests": 0.6,
+            "backend_conns_per_1000_requests": 0.5,
             "time_wait_backend_ports": 56
           }
         ],
         "summary": {
-          "throughput_rps": 6739.8,
-          "avg_latency_ms": 1.2,
-          "p95_latency_ms": 1.7,
-          "backend_conns_per_1000_requests": 0.6,
-          "time_wait_backend_ports": 53.7,
+          "throughput_rps": 7273.3,
+          "avg_latency_ms": 1.1,
+          "p95_latency_ms": 1.6,
+          "backend_conns_per_1000_requests": 0.5,
+          "time_wait_backend_ports": 53.0,
           "errors": 0
         }
       }
@@ -225,96 +225,96 @@
       "no-pool": {
         "runs": [
           {
-            "requests_ok": 16352,
+            "requests_ok": 15976,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.005,
-            "throughput_rps": 5441.5,
+            "throughput_rps": 5316.1,
+            "avg_latency_ms": 6.0,
+            "p95_latency_ms": 7.2,
+            "backend_conns_opened": 15976,
+            "backend_conns_per_1000_requests": 1000.0,
+            "time_wait_backend_ports": 14349
+          },
+          {
+            "requests_ok": 16328,
+            "errors": 0,
+            "error_kinds": {},
+            "elapsed_s": 3.005,
+            "throughput_rps": 5434.1,
+            "avg_latency_ms": 5.9,
+            "p95_latency_ms": 6.9,
+            "backend_conns_opened": 16328,
+            "backend_conns_per_1000_requests": 1000.0,
+            "time_wait_backend_ports": 14584
+          },
+          {
+            "requests_ok": 16187,
+            "errors": 0,
+            "error_kinds": {},
+            "elapsed_s": 3.005,
+            "throughput_rps": 5386.8,
             "avg_latency_ms": 5.9,
             "p95_latency_ms": 7.3,
-            "backend_conns_opened": 16352,
+            "backend_conns_opened": 16187,
             "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 14613
-          },
-          {
-            "requests_ok": 14774,
-            "errors": 0,
-            "error_kinds": {},
-            "elapsed_s": 3.005,
-            "throughput_rps": 4916.1,
-            "avg_latency_ms": 6.5,
-            "p95_latency_ms": 9.5,
-            "backend_conns_opened": 14774,
-            "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 13375
-          },
-          {
-            "requests_ok": 16665,
-            "errors": 0,
-            "error_kinds": {},
-            "elapsed_s": 3.005,
-            "throughput_rps": 5545.7,
-            "avg_latency_ms": 5.8,
-            "p95_latency_ms": 6.8,
-            "backend_conns_opened": 16665,
-            "backend_conns_per_1000_requests": 1000.0,
-            "time_wait_backend_ports": 14820
+            "time_wait_backend_ports": 14524
           }
         ],
         "summary": {
-          "throughput_rps": 5301.1,
-          "avg_latency_ms": 6.1,
-          "p95_latency_ms": 7.9,
+          "throughput_rps": 5379.0,
+          "avg_latency_ms": 5.9,
+          "p95_latency_ms": 7.1,
           "backend_conns_per_1000_requests": 1000.0,
-          "time_wait_backend_ports": 14269.3,
+          "time_wait_backend_ports": 14485.7,
           "errors": 0
         }
       },
       "pool-32": {
         "runs": [
           {
-            "requests_ok": 19948,
+            "requests_ok": 21674,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.004,
-            "throughput_rps": 6639.7,
-            "avg_latency_ms": 4.8,
-            "p95_latency_ms": 6.2,
-            "backend_conns_opened": 29,
-            "backend_conns_per_1000_requests": 1.5,
-            "time_wait_backend_ports": 57
+            "throughput_rps": 7215.3,
+            "avg_latency_ms": 4.4,
+            "p95_latency_ms": 5.1,
+            "backend_conns_opened": 31,
+            "backend_conns_per_1000_requests": 1.4,
+            "time_wait_backend_ports": 58
           },
           {
-            "requests_ok": 21005,
+            "requests_ok": 21815,
             "errors": 0,
             "error_kinds": {},
             "elapsed_s": 3.004,
-            "throughput_rps": 6992.6,
-            "avg_latency_ms": 4.6,
-            "p95_latency_ms": 5.3,
-            "backend_conns_opened": 30,
+            "throughput_rps": 7261.7,
+            "avg_latency_ms": 4.4,
+            "p95_latency_ms": 5.1,
+            "backend_conns_opened": 32,
+            "backend_conns_per_1000_requests": 1.5,
+            "time_wait_backend_ports": 76
+          },
+          {
+            "requests_ok": 21946,
+            "errors": 0,
+            "error_kinds": {},
+            "elapsed_s": 3.004,
+            "throughput_rps": 7306.1,
+            "avg_latency_ms": 4.4,
+            "p95_latency_ms": 5.0,
+            "backend_conns_opened": 31,
             "backend_conns_per_1000_requests": 1.4,
             "time_wait_backend_ports": 77
-          },
-          {
-            "requests_ok": 20323,
-            "errors": 0,
-            "error_kinds": {},
-            "elapsed_s": 3.003,
-            "throughput_rps": 6767.4,
-            "avg_latency_ms": 4.7,
-            "p95_latency_ms": 5.8,
-            "backend_conns_opened": 31,
-            "backend_conns_per_1000_requests": 1.5,
-            "time_wait_backend_ports": 75
           }
         ],
         "summary": {
-          "throughput_rps": 6799.9,
-          "avg_latency_ms": 4.7,
-          "p95_latency_ms": 5.8,
-          "backend_conns_per_1000_requests": 1.5,
-          "time_wait_backend_ports": 69.7,
+          "throughput_rps": 7261.0,
+          "avg_latency_ms": 4.4,
+          "p95_latency_ms": 5.1,
+          "backend_conns_per_1000_requests": 1.4,
+          "time_wait_backend_ports": 70.3,
           "errors": 0
         }
       }

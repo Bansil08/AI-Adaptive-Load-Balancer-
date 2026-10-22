@@ -338,3 +338,22 @@ def test_thread_start_failure_drops_one_connection_not_the_lb(monkeypatch):
         lb.shutdown()
         backend.shutdown()
         backend.server_close()
+
+
+def test_backend_stays_quiet_when_clients_reset_connections(capsys):
+    """A client resetting its connection is normal; the test backend must not
+    print a traceback for each one (socketserver's default)."""
+    import struct
+    server = start_backend("quiet")
+    try:
+        for _ in range(20):
+            s = socket.socket()
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))  # close() sends RST
+            s.connect(server.server_address)
+            s.close()
+        time.sleep(0.3)
+        assert request(server.server_address[1])[0] == 200  # still serving
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert "Exception occurred" not in capsys.readouterr().err

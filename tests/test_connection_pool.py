@@ -248,3 +248,16 @@ def test_post_on_a_connection_closed_at_reuse_is_not_resent():
         assert proxy.pool.counters().created == 1
     finally:
         sock.close()
+
+
+def test_nagle_is_off_on_backend_connections_and_in_the_test_backend(backend):
+    """Regression: http.server writes headers and body separately; with Nagle on,
+    the body waited for the (delayed) ACK of the headers on every pooled
+    keep-alive response, ~46 ms per request against the Docker backends."""
+    from backend.app import BackendHandler
+    conn = ConnectionPool(PoolSettings(size=1)).connect(as_backend(backend))
+    try:
+        assert conn.sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY) != 0
+    finally:
+        conn.sock.close()
+    assert BackendHandler.disable_nagle_algorithm is True
