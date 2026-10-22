@@ -2,7 +2,7 @@
 
 One command, fixed seed:
 
-    python -m experiments.run_experiments            # all strategies x scenarios, 3 repeats (~14 min)
+    python -m experiments.run_experiments            # all 4 strategies x 4 scenarios, 3 repeats (~28 min)
     python -m experiments.run_experiments --scenarios traffic_spike --repeats 1 --duration 10
 
 For each (strategy, scenario, repeat):
@@ -31,12 +31,19 @@ Latency is the LB's response_time_ms (request fully received -> response
 sent); the load generator's client-side numbers are recorded in the run's
 notes as a cross-check.
 
-Results: experiments/results/baseline_results.md (+ .json) and the PNG charts
-from experiments/plot_results.py.
+ML strategies (Phase 6): ml_latency needs a trained model
+(python -m ml.export_data, then python -m ml.train); every run counts how
+often each ML strategy fell back to least connections (from the LB's log).
+
+Results: experiments/results/<prefix>_results.md (+ .json) and the PNG charts
+from experiments/plot_results.py, where <prefix> is "baseline" for a batch
+of only round robin / least connections (Phase 5) and "comparison" once an
+ML strategy is included (Phase 6), so the Phase 5 report is kept.
 """
 
 import argparse
 import csv
+import hashlib
 import json
 import statistics
 import subprocess
@@ -47,12 +54,15 @@ from pathlib import Path
 
 import psycopg
 
-from experiments.benchmark_concurrency import PROJECT_ROOT, RESULTS_DIR, free_port, wait_for_port
+from experiments.benchmark_concurrency import RESULTS_DIR, free_port, wait_for_port
 from experiments.load_generator import LoadGenerator, summarise
 from experiments.scenarios import SCENARIOS, Scenario
-from lb.config import database_url
+from lb.config import PROJECT_ROOT, MLLatencySettings, database_url
 
-STRATEGIES = ("round_robin", "least_connections")
+MODEL_PATH = PROJECT_ROOT / MLLatencySettings().model_path  # where ml/train.py saves it
+
+STRATEGIES = ("round_robin", "least_connections", "ml_latency", "bandit")
+BASELINES = ("round_robin", "least_connections")
 BACKEND_PORTS = (19001, 19002, 19003)  # fixed, so each backend keeps one row in `servers`
 RUNS_DIR = RESULTS_DIR / "runs"        # raw client-side records per run (git-ignored)
 
@@ -89,7 +99,17 @@ port = {heartbeat_port}
 [database]
 enabled = true
 shutdown_timeout = 15.0
+[bandit]
+seed = {seed}
 """
+# ml_latency uses the defaults: ml/models/latency_model.joblib, 2 ms budget.
+
+FALLBACK_MARKER = "fallback to least connections"
+
+
+def batch_prefix(strategies) -> str:
+    """"baseline" for a Phase 5 batch, "comparison" once an ML strategy is in it."""
+    return "baseline" if set(strategies) <= set(BASELINES) else "comparison"
 
 RUN_RESULTS_SQL = """
 INSERT INTO run_results (run_id, avg_latency_ms, p95_latency_ms, error_rate, throughput_rps)
@@ -136,12 +156,12 @@ def start_backends(scenario: Scenario, heartbeat_port: int, seed: int) -> dict[s
     return procs
 
 
-def start_lb(strategy: str, scenario: Scenario, run_id: int, heartbeat_port: int, tmp: Path):
+def start_lb(strategy: str, scenario: Scenario, run_id: int, heartbeat_port: int, seed: int, tmp: Path):
     port = free_port()
     backends = ", ".join(f'"127.0.0.1:{p}"' for p in BACKEND_PORTS[:len(scenario.backends)])
     config = tmp / "lb.toml"
     config.write_text(LB_CONFIG.format(strategy=strategy, backends=backends, port=port,
-                                       heartbeat_port=heartbeat_port))
+                                       heartbeat_port=heartbeat_port, seed=seed))
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     # To a file, not a pipe: nobody reads a pipe while the run is going, and
     # once its ~64 KB buffer filled (the crash scenario logs a warning per
@@ -196,6 +216,8 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
     notes = {"batch": batch, "repeat": repeat, "seed": seed, "duration": duration,
              "backends": {spec.name: port for spec, port in zip(scenario.backends, BACKEND_PORTS)},
              "events": [vars(e) for e in scenario.events]}
+    if strategy == "ml_latency":  # which model file routed this run, for traceability
+        notes["model_sha256"] = hashlib.sha256(MODEL_PATH.read_bytes()).hexdigest()[:16]
     run_id = conn.execute("INSERT INTO experiment_runs (strategy, scenario, notes) VALUES (%s, %s, %s) RETURNING id",
                           (strategy, scenario.name, json.dumps(notes))).fetchone()[0]
     heartbeat_port = free_port()
@@ -203,7 +225,7 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
         backends = start_backends(scenario, heartbeat_port, seed)
         lb = None
         try:
-            lb, lb_port = start_lb(strategy, scenario, run_id, heartbeat_port, Path(tmp))
+            lb, lb_port = start_lb(strategy, scenario, run_id, heartbeat_port, seed, Path(tmp))
             results, load_started = LoadGenerator("127.0.0.1", lb_port).run(
                 scenario.profile(), duration, seed, event_actions(scenario, backends))
         finally:
@@ -223,9 +245,13 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
     port_to_name = {port: name for name, port in notes["backends"].items()}
     share = {port_to_name.get(port, str(port)): n for port, n in conn.execute(SHARE_SQL, (run_id,)).fetchall()}
     client = summarise(results, duration)
+    # How often an ML strategy handed the decision to least connections (each is logged).
+    log_text = (RUNS_DIR / f"run_{run_id}_lb.log").read_text(errors="replace")
+    fallbacks = log_text.count(FALLBACK_MARKER)
     # Every request the client got an HTTP answer to should be in the LB's log.
     answered = sum(1 for r in results if r.status is not None)
-    notes |= {"client": client, "logged_rows": logged, "client_answered": answered, "share": share}
+    notes |= {"client": client, "logged_rows": logged, "client_answered": answered, "share": share,
+              "fallbacks": fallbacks}
     conn.execute("UPDATE experiment_runs SET notes = %s WHERE id = %s", (json.dumps(notes), run_id))
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     with open(RUNS_DIR / f"run_{run_id}.csv", "w", newline="") as f:
@@ -236,7 +262,7 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
     return {"run_id": run_id, "strategy": strategy, "scenario": scenario.name, "repeat": repeat,
             "avg_latency_ms": avg, "p95_latency_ms": p95, "error_rate": error_rate,
             "throughput_rps": throughput, "share": share, "logged_rows": logged,
-            "client_answered": answered, "client": client}
+            "client_answered": answered, "client": client, "fallbacks": fallbacks}
 
 
 def recompute_batch(conn: psycopg.Connection, batch: str) -> list[dict]:
@@ -258,6 +284,7 @@ def recompute_batch(conn: psycopg.Connection, batch: str) -> list[dict]:
                      "avg_latency_ms": avg, "p95_latency_ms": p95, "error_rate": error_rate,
                      "throughput_rps": throughput, "share": notes["share"], "logged_rows": notes["logged_rows"],
                      "client_answered": notes["client_answered"], "client": notes["client"],
+                     "fallbacks": notes.get("fallbacks", 0),
                      "base_seed": notes["seed"] - notes["repeat"]})  # repeat i ran with seed + i
     return runs
 
@@ -273,27 +300,34 @@ def aggregate(runs: list[dict]) -> dict:
     total = sum(shares.values()) or 1
     return {"runs": len(runs), "avg_latency_ms": stats("avg_latency_ms"), "p95_latency_ms": stats("p95_latency_ms"),
             "error_rate": stats("error_rate"), "throughput_rps": stats("throughput_rps"),
-            "share": {name: n / total for name, n in sorted(shares.items())}}
+            "share": {name: n / total for name, n in sorted(shares.items())},
+            "fallback_rate": sum(r.get("fallbacks", 0) for r in runs) / max(1, sum(r["logged_rows"] for r in runs))}
 
 
 def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Path) -> None:
     scenarios = [name for name in SCENARIOS if any(r["scenario"] == name for r in runs)]
     strategies = [name for name in STRATEGIES if any(r["strategy"] == name for r in runs)]
+    ml = any(name not in BASELINES for name in strategies)
+    title = ("Strategy comparison: round robin, least connections, ML latency, bandit" if ml
+             else "Baseline experiments: round robin vs least connections")
     lines = [
-        "# Baseline experiments: round robin vs least connections", "",
+        f"# {title}", "",
         f"Batch `{batch}` (seed {seed}, {repeats} repeats per cell), produced by "
         "`python -m experiments.run_experiments`. Real measured numbers; nothing estimated.", "",
         "Latency is the load balancer's `response_time_ms` over successful requests; error rate is 5xx over "
         "all requests; throughput is successful requests divided by the time taken to serve them (load start "
         "to last response, at least the planned duration). Each cell is the mean over the repeats, p95 with "
         "its min–max range. Retries off, health checks every 1 s, circuit breaker on, capacity 8 requests at "
-        "a time per backend.", "",
+        "a time per backend."
+        + (" Fallbacks: share of an ML strategy's requests routed by least connections instead (no fresh "
+           "heartbeat or latency history yet, an error, or over the 2 ms decision budget)." if ml else ""), "",
     ]
     for name in scenarios:
         scenario = SCENARIOS[name]
         lines += [f"## {name}", "", scenario.description, "",
-                  "| Strategy | Avg latency (ms) | p95 latency (ms) [min–max] | Error rate | Throughput (req/s) | Share of requests |",
-                  "|---|---:|---:|---:|---:|---|"]
+                  "| Strategy | Avg latency (ms) | p95 latency (ms) [min–max] | Error rate | Throughput (req/s) | Share of requests |"
+                  + (" Fallbacks |" if ml else ""),
+                  "|---|---:|---:|---:|---:|---|" + ("---:|" if ml else "")]
         for strategy in strategies:
             cell = [r for r in runs if r["scenario"] == name and r["strategy"] == strategy]
             if not cell:
@@ -302,7 +336,8 @@ def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Pa
             share = ", ".join(f"{k} {v:.0%}" for k, v in a["share"].items())
             lines.append(f"| {strategy} | {a['avg_latency_ms']['mean']:.1f} | {a['p95_latency_ms']['mean']:.1f} "
                          f"[{a['p95_latency_ms']['min']:.0f}–{a['p95_latency_ms']['max']:.0f}] | "
-                         f"{a['error_rate']['mean']:.2%} | {a['throughput_rps']['mean']:.1f} | {share} |")
+                         f"{a['error_rate']['mean']:.2%} | {a['throughput_rps']['mean']:.1f} | {share} |"
+                         + ((f" {a['fallback_rate']:.2%} |" if strategy not in BASELINES else " – |") if ml else ""))
         lines.append("")
     mismatches = [r for r in runs if r["logged_rows"] != r["client_answered"]]
     lines += ["## Cross-check", "",
@@ -311,7 +346,7 @@ def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Pa
               + ("" if not mismatches else " Mismatches: " + ", ".join(
                   f"run {r['run_id']} ({r['logged_rows']} logged vs {r['client_answered']} answered)"
                   for r in mismatches)), "",
-              "Per-run numbers (and client-side latencies) are in `baseline_results.json`; raw per-request "
+              f"Per-run numbers (and client-side latencies) are in `{path.stem}.json`; raw per-request "
               "records in `runs/run_<id>.csv` (not committed).", ""]
     path.write_text("\n".join(lines))
 
@@ -336,28 +371,32 @@ def main() -> None:
         save(args.recompute, runs[0]["base_seed"], repeats, runs, plots=not args.no_plots)
         return
 
-    batch = datetime.now(timezone.utc).strftime("baseline-%Y%m%dT%H%M%SZ")
+    if "ml_latency" in args.strategies and not MODEL_PATH.exists():
+        parser.error(f"ml_latency needs {MODEL_PATH}: run python -m ml.export_data, then python -m ml.train")
+    batch = datetime.now(timezone.utc).strftime(f"{batch_prefix(args.strategies)}-%Y%m%dT%H%M%SZ")
     runs = []
     with psycopg.connect(database_url(), autocommit=True) as conn:
         for name in args.scenarios:
             scenario = SCENARIOS[name].scaled(args.duration) if args.duration else SCENARIOS[name]
             duration = scenario.duration
             for repeat in range(args.repeats):
-                for strategy in args.strategies:  # same seed for both strategies: identical arrivals
+                for strategy in args.strategies:  # same seed for every strategy: identical arrivals
                     run = run_once(conn, strategy, scenario, repeat, args.seed + repeat, batch, duration)
                     runs.append(run)
                     print(f"{name:<16} {strategy:<18} repeat {repeat}: avg {run['avg_latency_ms']:7.1f} ms  "
                           f"p95 {run['p95_latency_ms']:7.1f} ms  errors {run['error_rate']:6.2%}  "
-                          f"{run['throughput_rps']:6.1f} req/s  share {run['share']}", flush=True)
+                          f"{run['throughput_rps']:6.1f} req/s  share {run['share']}  "
+                          f"fallbacks {run['fallbacks']}", flush=True)
     save(batch, args.seed, args.repeats, runs, plots=not args.no_plots)
 
 
 def save(batch: str, seed: int, repeats: int, runs: list[dict], plots: bool) -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    (RESULTS_DIR / "baseline_results.json").write_text(json.dumps(
+    prefix = batch_prefix({r["strategy"] for r in runs})
+    (RESULTS_DIR / f"{prefix}_results.json").write_text(json.dumps(
         {"batch": batch, "seed": seed, "repeats": repeats, "runs": runs}, indent=2, default=str) + "\n")
-    write_report(batch, seed, repeats, runs, RESULTS_DIR / "baseline_results.md")
-    print(f"saved {RESULTS_DIR / 'baseline_results.md'}")
+    write_report(batch, seed, repeats, runs, RESULTS_DIR / f"{prefix}_results.md")
+    print(f"saved {RESULTS_DIR / f'{prefix}_results.md'}")
     if plots:
         from experiments.plot_results import plot_batch
         for path in plot_batch(batch):

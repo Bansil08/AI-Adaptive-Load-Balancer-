@@ -299,6 +299,14 @@ class Proxy:
                 # put back would never be taken out again (an fd and a backend
                 # thread held forever).
                 self.pool.discard_backend(backend)
+            # Last, after the lease is released: learning strategies (the bandit)
+            # score the backend by this outcome (any failure, including a 5xx
+            # or a timeout, as None: a fast error is not a good answer), and a
+            # bug in one must not leak the lease or fail an answered request.
+            try:
+                self.router.strategy.observe(backend, elapsed_ms if ok else None)
+            except Exception:
+                log.exception("%s.observe() failed", self.router.strategy.name)
 
     def handle_client(self, client_sock: socket.socket, client_addr: tuple) -> None:
         """Serve one client connection: read one request, proxy it, reply, close."""

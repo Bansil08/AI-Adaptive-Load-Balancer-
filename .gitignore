@@ -10,6 +10,7 @@ venv/
 
 # ML artefacts and experiment outputs (regenerated, not source)
 ml/models/
+ml/data/
 experiments/results/*
 # ...except the measured benchmark reports that the docs cite
 !experiments/results/concurrency_benchmark.md
@@ -25,6 +26,15 @@ experiments/results/*
 !experiments/results/baseline_bars.png
 !experiments/results/timeline_sudden_slowdown.png
 !experiments/results/timeline_server_crash.png
+!experiments/results/ml_training.md
+!experiments/results/ml_training.json
+!experiments/results/ml_inference.md
+!experiments/results/ml_inference.json
+!experiments/results/comparison_results.md
+!experiments/results/comparison_results.json
+!experiments/results/comparison_bars.png
+!experiments/results/comparison_timeline_sudden_slowdown.png
+!experiments/results/comparison_timeline_server_crash.png
 
 # OS / editor
 .DS_Store

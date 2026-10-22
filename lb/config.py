@@ -143,6 +143,25 @@ class DatabaseSettings:
 
 
 @dataclass(frozen=True)
+class MLLatencySettings:
+    """Supervised latency strategy (lb/strategies/ml_latency.py)."""
+
+    model_path: str = "ml/models/latency_model.joblib"  # relative to the repo root
+    time_budget_ms: float = 2.0  # a slower decision is discarded and least connections used
+
+
+@dataclass(frozen=True)
+class BanditSettings:
+    """Epsilon-greedy bandit strategy (lb/strategies/bandit.py)."""
+
+    epsilon: float = 0.1             # share of requests sent to a random backend (exploration)
+    window: int = 50                 # rewards remembered per backend (sliding window)
+    failure_penalty_ms: float = 1000.0  # latency recorded for a failed request (refused, 5xx, timeout)
+    seed: int = 42                   # random generator seed (exploration choices)
+    time_budget_ms: float = 2.0
+
+
+@dataclass(frozen=True)
 class LBConfig:
     host: str
     port: int
@@ -158,6 +177,8 @@ class LBConfig:
     heartbeat: HeartbeatSettings = HeartbeatSettings()
     admin: AdminSettings = AdminSettings()
     database: DatabaseSettings = DatabaseSettings()
+    ml_latency: MLLatencySettings = MLLatencySettings()
+    bandit: BanditSettings = BanditSettings()
     sticky_sessions: bool = False
 
 
@@ -171,6 +192,8 @@ _SECTIONS = {
     "heartbeat": ("heartbeat", HeartbeatSettings),
     "admin": ("admin", AdminSettings),
     "database": ("database", DatabaseSettings),
+    "ml_latency": ("ml_latency", MLLatencySettings),
+    "bandit": ("bandit", BanditSettings),
 }
 
 
@@ -258,7 +281,8 @@ def _read_section(table: dict, cls, name: str):
     return cls(**values)
 
 
-def _check_sections(health, breaker, pool, retry, rate_limit, heartbeat, admin, database) -> None:
+def _check_sections(health, breaker, pool, retry, rate_limit, heartbeat, admin, database, ml_latency,
+                    bandit) -> None:
     def require(ok: bool, message: str) -> None:
         if not ok:
             raise ValueError(message)
@@ -279,6 +303,10 @@ def _check_sections(health, breaker, pool, retry, rate_limit, heartbeat, admin, 
     require(database.batch_size >= 1 and database.flush_interval_ms >= 1 and database.queue_size >= 1,
             "[database] batch_size, flush_interval_ms and queue_size must be at least 1")
     require(database.shutdown_timeout >= 0, "[database] shutdown_timeout must not be negative")
+    require(ml_latency.time_budget_ms > 0 and bandit.time_budget_ms > 0, "time_budget_ms must be positive")
+    require(0 <= bandit.epsilon <= 1, "[bandit] epsilon must be between 0 and 1")
+    require(bandit.window >= 1, "[bandit] window must be at least 1")
+    require(bandit.failure_penalty_ms >= 0, "[bandit] failure_penalty_ms must not be negative")
 
 
 def _whole_number(value, name: str) -> int:

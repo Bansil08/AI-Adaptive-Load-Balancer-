@@ -1,0 +1,1255 @@
+{
+  "batch": "comparison-20261022T162847Z",
+  "seed": 1000,
+  "repeats": 3,
+  "runs": [
+    {
+      "run_id": 87,
+      "strategy": "round_robin",
+      "scenario": "unequal_servers",
+      "repeat": 0,
+      "avg_latency_ms": 85.12384752255107,
+      "p95_latency_ms": 167.33559425119893,
+      "error_rate": 0.0,
+      "throughput_rps": 87.12488027793964,
+      "share": {
+        "fast": 876,
+        "medium": 875,
+        "slow": 875
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 88.38417574982674,
+        "p95_latency_ms": 170.9358386870008,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 88,
+      "strategy": "least_connections",
+      "scenario": "unequal_servers",
+      "repeat": 0,
+      "avg_latency_ms": 57.75971608300658,
+      "p95_latency_ms": 164.63791674868844,
+      "error_rate": 0.0,
+      "throughput_rps": 86.9686113523778,
+      "share": {
+        "fast": 1484,
+        "medium": 753,
+        "slow": 389
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 61.01450767752856,
+        "p95_latency_ms": 167.55662869400112,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 89,
+      "strategy": "ml_latency",
+      "scenario": "unequal_servers",
+      "repeat": 0,
+      "avg_latency_ms": 27.3541565606171,
+      "p95_latency_ms": 29.44946875140886,
+      "error_rate": 0.0,
+      "throughput_rps": 87.38837349937258,
+      "share": {
+        "fast": 2582,
+        "medium": 30,
+        "slow": 14
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 32.082651820414064,
+        "p95_latency_ms": 36.185918681439944,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 84
+    },
+    {
+      "run_id": 90,
+      "strategy": "bandit",
+      "scenario": "unequal_servers",
+      "repeat": 0,
+      "avg_latency_ms": 32.343237306514375,
+      "p95_latency_ms": 68.16415624962247,
+      "error_rate": 0.0,
+      "throughput_rps": 87.41584061582296,
+      "share": {
+        "fast": 2432,
+        "medium": 91,
+        "slow": 103
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 35.649040722598095,
+        "p95_latency_ms": 71.50826850556768,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 91,
+      "strategy": "round_robin",
+      "scenario": "unequal_servers",
+      "repeat": 1,
+      "avg_latency_ms": 85.30521816960737,
+      "p95_latency_ms": 167.85720820043935,
+      "error_rate": 0.0,
+      "throughput_rps": 90.53670483750321,
+      "share": {
+        "fast": 910,
+        "medium": 910,
+        "slow": 909
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 88.86339608519619,
+        "p95_latency_ms": 171.5746446789126,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 92,
+      "strategy": "least_connections",
+      "scenario": "unequal_servers",
+      "repeat": 1,
+      "avg_latency_ms": 57.58665442177639,
+      "p95_latency_ms": 164.03643319936236,
+      "error_rate": 0.0,
+      "throughput_rps": 90.55782224796968,
+      "share": {
+        "fast": 1539,
+        "medium": 793,
+        "slow": 397
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 60.96265657148273,
+        "p95_latency_ms": 167.38340305892052,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 93,
+      "strategy": "ml_latency",
+      "scenario": "unequal_servers",
+      "repeat": 1,
+      "avg_latency_ms": 27.250378477834,
+      "p95_latency_ms": 29.893949598772448,
+      "error_rate": 0.0,
+      "throughput_rps": 90.82501899454341,
+      "share": {
+        "fast": 2700,
+        "medium": 14,
+        "slow": 15
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 31.022179315412096,
+        "p95_latency_ms": 36.501384631264955,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 38
+    },
+    {
+      "run_id": 94,
+      "strategy": "bandit",
+      "scenario": "unequal_servers",
+      "repeat": 1,
+      "avg_latency_ms": 31.87268426420882,
+      "p95_latency_ms": 67.71669180016033,
+      "error_rate": 0.0,
+      "throughput_rps": 90.84012939442454,
+      "share": {
+        "fast": 2546,
+        "medium": 86,
+        "slow": 97
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 35.37637928359134,
+        "p95_latency_ms": 70.78703946172027,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 95,
+      "strategy": "round_robin",
+      "scenario": "unequal_servers",
+      "repeat": 2,
+      "avg_latency_ms": 85.26605703902521,
+      "p95_latency_ms": 167.38954099855619,
+      "error_rate": 0.0,
+      "throughput_rps": 88.32718349384515,
+      "share": {
+        "fast": 889,
+        "medium": 889,
+        "slow": 889
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 88.8329208619615,
+        "p95_latency_ms": 171.5285108293756,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 96,
+      "strategy": "least_connections",
+      "scenario": "unequal_servers",
+      "repeat": 2,
+      "avg_latency_ms": 59.39846192467596,
+      "p95_latency_ms": 165.68022950013983,
+      "error_rate": 0.0,
+      "throughput_rps": 88.631099153907,
+      "share": {
+        "fast": 1486,
+        "medium": 770,
+        "slow": 411
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 63.5936163380802,
+        "p95_latency_ms": 169.32228635414504,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 97,
+      "strategy": "ml_latency",
+      "scenario": "unequal_servers",
+      "repeat": 2,
+      "avg_latency_ms": 28.917636130559305,
+      "p95_latency_ms": 31.58083319940488,
+      "error_rate": 0.0,
+      "throughput_rps": 88.69475442527629,
+      "share": {
+        "fast": 2594,
+        "medium": 42,
+        "slow": 31
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 32.778075492132785,
+        "p95_latency_ms": 38.81877447565785,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 124
+    },
+    {
+      "run_id": 98,
+      "strategy": "bandit",
+      "scenario": "unequal_servers",
+      "repeat": 2,
+      "avg_latency_ms": 31.285022388097453,
+      "p95_latency_ms": 67.24515449604951,
+      "error_rate": 0.0,
+      "throughput_rps": 88.62342990817125,
+      "share": {
+        "fast": 2502,
+        "medium": 84,
+        "slow": 81
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 34.875993666274745,
+        "p95_latency_ms": 70.20907736296067,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 2
+    },
+    {
+      "run_id": 99,
+      "strategy": "round_robin",
+      "scenario": "sudden_slowdown",
+      "repeat": 0,
+      "avg_latency_ms": 279.16620314094797,
+      "p95_latency_ms": 1990.4811560008925,
+      "error_rate": 0.0,
+      "throughput_rps": 79.52057270801255,
+      "share": {
+        "a": 876,
+        "b": 875,
+        "c": 875
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 282.71854394134795,
+        "p95_latency_ms": 2002.4134492996382,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 100,
+      "strategy": "least_connections",
+      "scenario": "sudden_slowdown",
+      "repeat": 0,
+      "avg_latency_ms": 49.01062703130637,
+      "p95_latency_ms": 43.089062499348024,
+      "error_rate": 0.0,
+      "throughput_rps": 87.07399190384298,
+      "share": {
+        "a": 1051,
+        "b": 550,
+        "c": 1025
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 52.42236122580332,
+        "p95_latency_ms": 51.263802335597575,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 101,
+      "strategy": "ml_latency",
+      "scenario": "sudden_slowdown",
+      "repeat": 0,
+      "avg_latency_ms": 38.275868054807304,
+      "p95_latency_ms": 40.42695799762441,
+      "error_rate": 0.0,
+      "throughput_rps": 87.33319185755339,
+      "share": {
+        "a": 1022,
+        "b": 464,
+        "c": 1140
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 42.10576064916881,
+        "p95_latency_ms": 46.87398970418144,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 23
+    },
+    {
+      "run_id": 102,
+      "strategy": "bandit",
+      "scenario": "sudden_slowdown",
+      "repeat": 0,
+      "avg_latency_ms": 49.99196299084697,
+      "p95_latency_ms": 41.19701074887416,
+      "error_rate": 0.0,
+      "throughput_rps": 87.35017457561071,
+      "share": {
+        "a": 512,
+        "b": 636,
+        "c": 1478
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2626,
+        "error_rate": 0.0,
+        "avg_latency_ms": 53.486065028122226,
+        "p95_latency_ms": 47.69295448932098,
+        "throughput_rps": 87.53333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 103,
+      "strategy": "round_robin",
+      "scenario": "sudden_slowdown",
+      "repeat": 1,
+      "avg_latency_ms": 319.2572074719942,
+      "p95_latency_ms": 2307.769425002334,
+      "error_rate": 0.0,
+      "throughput_rps": 81.94841315861495,
+      "share": {
+        "a": 910,
+        "b": 910,
+        "c": 909
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 322.8184084644463,
+        "p95_latency_ms": 2312.5961669138633,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 104,
+      "strategy": "least_connections",
+      "scenario": "sudden_slowdown",
+      "repeat": 1,
+      "avg_latency_ms": 49.26096008066555,
+      "p95_latency_ms": 45.741041400469825,
+      "error_rate": 0.0,
+      "throughput_rps": 90.11919179497286,
+      "share": {
+        "a": 1076,
+        "b": 573,
+        "c": 1080
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 52.94321443874452,
+        "p95_latency_ms": 56.3206870428985,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 105,
+      "strategy": "ml_latency",
+      "scenario": "sudden_slowdown",
+      "repeat": 1,
+      "avg_latency_ms": 37.21550355257185,
+      "p95_latency_ms": 39.622883599076886,
+      "error_rate": 0.0,
+      "throughput_rps": 90.84712396447927,
+      "share": {
+        "a": 1133,
+        "b": 448,
+        "c": 1148
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 40.669289403090275,
+        "p95_latency_ms": 45.1630462121102,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 13
+    },
+    {
+      "run_id": 106,
+      "strategy": "bandit",
+      "scenario": "sudden_slowdown",
+      "repeat": 1,
+      "avg_latency_ms": 40.97300190994572,
+      "p95_latency_ms": 40.02893300203141,
+      "error_rate": 0.0,
+      "throughput_rps": 90.79810301502272,
+      "share": {
+        "a": 702,
+        "b": 332,
+        "c": 1695
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2729,
+        "error_rate": 0.0,
+        "avg_latency_ms": 44.5320614934204,
+        "p95_latency_ms": 47.90919855440734,
+        "throughput_rps": 90.96666666666667
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 107,
+      "strategy": "round_robin",
+      "scenario": "sudden_slowdown",
+      "repeat": 2,
+      "avg_latency_ms": 280.86062510337547,
+      "p95_latency_ms": 2152.2060873052365,
+      "error_rate": 0.0,
+      "throughput_rps": 81.55840591022302,
+      "share": {
+        "a": 889,
+        "b": 889,
+        "c": 889
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 284.06474930207577,
+        "p95_latency_ms": 2162.0603616393055,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 108,
+      "strategy": "least_connections",
+      "scenario": "sudden_slowdown",
+      "repeat": 2,
+      "avg_latency_ms": 48.37333596137388,
+      "p95_latency_ms": 40.5820965032035,
+      "error_rate": 0.0,
+      "throughput_rps": 88.15397349160106,
+      "share": {
+        "a": 1049,
+        "b": 553,
+        "c": 1065
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 51.500993416663775,
+        "p95_latency_ms": 48.69846151996171,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 109,
+      "strategy": "ml_latency",
+      "scenario": "sudden_slowdown",
+      "repeat": 2,
+      "avg_latency_ms": 36.6363586783393,
+      "p95_latency_ms": 39.184867002040846,
+      "error_rate": 0.0,
+      "throughput_rps": 88.730695916811,
+      "share": {
+        "a": 1106,
+        "b": 491,
+        "c": 1070
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 39.9037324377415,
+        "p95_latency_ms": 44.37064031662885,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 9
+    },
+    {
+      "run_id": 110,
+      "strategy": "bandit",
+      "scenario": "sudden_slowdown",
+      "repeat": 2,
+      "avg_latency_ms": 40.00444292418003,
+      "p95_latency_ms": 38.738612696761265,
+      "error_rate": 0.0,
+      "throughput_rps": 88.71152054639644,
+      "share": {
+        "a": 942,
+        "b": 728,
+        "c": 997
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2667,
+        "error_rate": 0.0,
+        "avg_latency_ms": 43.07209170354819,
+        "p95_latency_ms": 43.88785400806228,
+        "throughput_rps": 88.9
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 111,
+      "strategy": "round_robin",
+      "scenario": "traffic_spike",
+      "repeat": 0,
+      "avg_latency_ms": 663.5028870795596,
+      "p95_latency_ms": 3523.727827299079,
+      "error_rate": 0.0,
+      "throughput_rps": 112.72480299752388,
+      "share": {
+        "fast": 1290,
+        "medium": 1289,
+        "slow": 1289
+      },
+      "logged_rows": 3868,
+      "client_answered": 3868,
+      "client": {
+        "sent": 3868,
+        "ok": 3868,
+        "error_rate": 0.0,
+        "avg_latency_ms": 666.2678848981944,
+        "p95_latency_ms": 3528.8299469902995,
+        "throughput_rps": 128.93333333333334
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 112,
+      "strategy": "least_connections",
+      "scenario": "traffic_spike",
+      "repeat": 0,
+      "avg_latency_ms": 55.6140398557423,
+      "p95_latency_ms": 164.2952060468815,
+      "error_rate": 0.0,
+      "throughput_rps": 128.55538478723835,
+      "share": {
+        "fast": 2277,
+        "medium": 1065,
+        "slow": 526
+      },
+      "logged_rows": 3868,
+      "client_answered": 3868,
+      "client": {
+        "sent": 3868,
+        "ok": 3868,
+        "error_rate": 0.0,
+        "avg_latency_ms": 58.36794855335661,
+        "p95_latency_ms": 166.65126938460162,
+        "throughput_rps": 128.93333333333334
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 113,
+      "strategy": "ml_latency",
+      "scenario": "traffic_spike",
+      "repeat": 0,
+      "avg_latency_ms": 26.164208677391375,
+      "p95_latency_ms": 29.985489150931244,
+      "error_rate": 0.0,
+      "throughput_rps": 128.86089632814407,
+      "share": {
+        "fast": 3863,
+        "medium": 3,
+        "slow": 2
+      },
+      "logged_rows": 3868,
+      "client_answered": 3868,
+      "client": {
+        "sent": 3868,
+        "ok": 3868,
+        "error_rate": 0.0,
+        "avg_latency_ms": 28.9427524511033,
+        "p95_latency_ms": 34.48195466626203,
+        "throughput_rps": 128.93333333333334
+      },
+      "fallbacks": 9
+    },
+    {
+      "run_id": 114,
+      "strategy": "bandit",
+      "scenario": "traffic_spike",
+      "repeat": 0,
+      "avg_latency_ms": 31.9082182776552,
+      "p95_latency_ms": 68.45137730306305,
+      "error_rate": 0.0,
+      "throughput_rps": 128.56937486133006,
+      "share": {
+        "fast": 3600,
+        "medium": 127,
+        "slow": 141
+      },
+      "logged_rows": 3868,
+      "client_answered": 3868,
+      "client": {
+        "sent": 3868,
+        "ok": 3868,
+        "error_rate": 0.0,
+        "avg_latency_ms": 34.507117284850075,
+        "p95_latency_ms": 70.94462526583811,
+        "throughput_rps": 128.93333333333334
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 115,
+      "strategy": "round_robin",
+      "scenario": "traffic_spike",
+      "repeat": 1,
+      "avg_latency_ms": 749.7393064275973,
+      "p95_latency_ms": 3842.790414700357,
+      "error_rate": 0.0,
+      "throughput_rps": 114.21027869388755,
+      "share": {
+        "fast": 1318,
+        "medium": 1317,
+        "slow": 1317
+      },
+      "logged_rows": 3952,
+      "client_answered": 3952,
+      "client": {
+        "sent": 3952,
+        "ok": 3952,
+        "error_rate": 0.0,
+        "avg_latency_ms": 752.4273332141504,
+        "p95_latency_ms": 3846.5104677306954,
+        "throughput_rps": 131.73333333333332
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 116,
+      "strategy": "least_connections",
+      "scenario": "traffic_spike",
+      "repeat": 1,
+      "avg_latency_ms": 55.195211341348475,
+      "p95_latency_ms": 163.5242790525808,
+      "error_rate": 0.0,
+      "throughput_rps": 131.12199886728112,
+      "share": {
+        "fast": 2331,
+        "medium": 1088,
+        "slow": 533
+      },
+      "logged_rows": 3952,
+      "client_answered": 3952,
+      "client": {
+        "sent": 3952,
+        "ok": 3952,
+        "error_rate": 0.0,
+        "avg_latency_ms": 57.85461158106973,
+        "p95_latency_ms": 165.87245127448114,
+        "throughput_rps": 131.73333333333332
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 117,
+      "strategy": "ml_latency",
+      "scenario": "traffic_spike",
+      "repeat": 1,
+      "avg_latency_ms": 26.408590991639226,
+      "p95_latency_ms": 31.329112350431384,
+      "error_rate": 0.0,
+      "throughput_rps": 131.5372813999827,
+      "share": {
+        "fast": 3944,
+        "medium": 5,
+        "slow": 3
+      },
+      "logged_rows": 3952,
+      "client_answered": 3952,
+      "client": {
+        "sent": 3952,
+        "ok": 3952,
+        "error_rate": 0.0,
+        "avg_latency_ms": 29.234538953793525,
+        "p95_latency_ms": 35.246182487753686,
+        "throughput_rps": 131.73333333333332
+      },
+      "fallbacks": 9
+    },
+    {
+      "run_id": 118,
+      "strategy": "bandit",
+      "scenario": "traffic_spike",
+      "repeat": 1,
+      "avg_latency_ms": 31.536284739873874,
+      "p95_latency_ms": 67.22471890279849,
+      "error_rate": 0.0,
+      "throughput_rps": 131.24399883328337,
+      "share": {
+        "fast": 3690,
+        "medium": 131,
+        "slow": 131
+      },
+      "logged_rows": 3952,
+      "client_answered": 3952,
+      "client": {
+        "sent": 3952,
+        "ok": 3952,
+        "error_rate": 0.0,
+        "avg_latency_ms": 34.08840243314131,
+        "p95_latency_ms": 69.4644230461563,
+        "throughput_rps": 131.73333333333332
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 119,
+      "strategy": "round_robin",
+      "scenario": "traffic_spike",
+      "repeat": 2,
+      "avg_latency_ms": 682.9100394263924,
+      "p95_latency_ms": 3435.7748083974,
+      "error_rate": 0.0,
+      "throughput_rps": 113.48007662738505,
+      "share": {
+        "fast": 1289,
+        "medium": 1288,
+        "slow": 1288
+      },
+      "logged_rows": 3865,
+      "client_answered": 3865,
+      "client": {
+        "sent": 3865,
+        "ok": 3865,
+        "error_rate": 0.0,
+        "avg_latency_ms": 685.6527192667154,
+        "p95_latency_ms": 3441.036483796779,
+        "throughput_rps": 128.83333333333334
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 120,
+      "strategy": "least_connections",
+      "scenario": "traffic_spike",
+      "repeat": 2,
+      "avg_latency_ms": 55.50236342892023,
+      "p95_latency_ms": 164.0350166024291,
+      "error_rate": 0.0,
+      "throughput_rps": 128.23395074966928,
+      "share": {
+        "fast": 2276,
+        "medium": 1064,
+        "slow": 525
+      },
+      "logged_rows": 3865,
+      "client_answered": 3865,
+      "client": {
+        "sent": 3865,
+        "ok": 3865,
+        "error_rate": 0.0,
+        "avg_latency_ms": 58.304502007358046,
+        "p95_latency_ms": 166.2878892966546,
+        "throughput_rps": 128.83333333333334
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 121,
+      "strategy": "ml_latency",
+      "scenario": "traffic_spike",
+      "repeat": 2,
+      "avg_latency_ms": 26.107004668859837,
+      "p95_latency_ms": 29.23180799989495,
+      "error_rate": 0.0,
+      "throughput_rps": 128.60148628713867,
+      "share": {
+        "fast": 3856,
+        "medium": 5,
+        "slow": 4
+      },
+      "logged_rows": 3865,
+      "client_answered": 3865,
+      "client": {
+        "sent": 3865,
+        "ok": 3865,
+        "error_rate": 0.0,
+        "avg_latency_ms": 28.880755567539833,
+        "p95_latency_ms": 34.03764847462298,
+        "throughput_rps": 128.83333333333334
+      },
+      "fallbacks": 15
+    },
+    {
+      "run_id": 122,
+      "strategy": "bandit",
+      "scenario": "traffic_spike",
+      "repeat": 2,
+      "avg_latency_ms": 30.861364837007656,
+      "p95_latency_ms": 66.84244200296234,
+      "error_rate": 0.0,
+      "throughput_rps": 128.613541365376,
+      "share": {
+        "fast": 3627,
+        "medium": 122,
+        "slow": 116
+      },
+      "logged_rows": 3865,
+      "client_answered": 3865,
+      "client": {
+        "sent": 3865,
+        "ok": 3865,
+        "error_rate": 0.0,
+        "avg_latency_ms": 33.32495347455403,
+        "p95_latency_ms": 68.83691278198967,
+        "throughput_rps": 128.83333333333334
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 123,
+      "strategy": "round_robin",
+      "scenario": "server_crash",
+      "repeat": 0,
+      "avg_latency_ms": 36.03431981453445,
+      "p95_latency_ms": 38.70608299621381,
+      "error_rate": 0.001904036557501904,
+      "throughput_rps": 87.21008676987714,
+      "share": {
+        "a": 1097,
+        "b": 433,
+        "c": 1096
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2621,
+        "error_rate": 0.001904036557501904,
+        "avg_latency_ms": 39.20600769765588,
+        "p95_latency_ms": 43.91193766059587,
+        "throughput_rps": 87.36666666666666
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 124,
+      "strategy": "least_connections",
+      "scenario": "server_crash",
+      "repeat": 0,
+      "avg_latency_ms": 36.08951561388297,
+      "p95_latency_ms": 39.00195800088113,
+      "error_rate": 0.001904036557501904,
+      "throughput_rps": 87.19286802925289,
+      "share": {
+        "a": 1093,
+        "b": 439,
+        "c": 1094
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2621,
+        "error_rate": 0.001904036557501904,
+        "avg_latency_ms": 39.70523746313928,
+        "p95_latency_ms": 45.04218122747261,
+        "throughput_rps": 87.36666666666666
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 125,
+      "strategy": "ml_latency",
+      "scenario": "server_crash",
+      "repeat": 0,
+      "avg_latency_ms": 36.720873174731146,
+      "p95_latency_ms": 39.939499998581596,
+      "error_rate": 0.001904036557501904,
+      "throughput_rps": 87.22945183128765,
+      "share": {
+        "a": 1077,
+        "b": 442,
+        "c": 1107
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2621,
+        "error_rate": 0.001904036557501904,
+        "avg_latency_ms": 40.289184093567485,
+        "p95_latency_ms": 45.94772140990244,
+        "throughput_rps": 87.36666666666666
+      },
+      "fallbacks": 15
+    },
+    {
+      "run_id": 126,
+      "strategy": "bandit",
+      "scenario": "server_crash",
+      "repeat": 0,
+      "avg_latency_ms": 36.33482063283903,
+      "p95_latency_ms": 39.17365595261799,
+      "error_rate": 0.002284843869002285,
+      "throughput_rps": 87.16730286598772,
+      "share": {
+        "a": 915,
+        "b": 970,
+        "c": 741
+      },
+      "logged_rows": 2626,
+      "client_answered": 2626,
+      "client": {
+        "sent": 2626,
+        "ok": 2620,
+        "error_rate": 0.002284843869002285,
+        "avg_latency_ms": 39.78992574773809,
+        "p95_latency_ms": 44.87805915414356,
+        "throughput_rps": 87.33333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 127,
+      "strategy": "round_robin",
+      "scenario": "server_crash",
+      "repeat": 1,
+      "avg_latency_ms": 36.08420903526037,
+      "p95_latency_ms": 39.093014303580276,
+      "error_rate": 0.001832172957127153,
+      "throughput_rps": 90.64025561350675,
+      "share": {
+        "a": 1135,
+        "b": 460,
+        "c": 1134
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2724,
+        "error_rate": 0.001832172957127153,
+        "avg_latency_ms": 39.5037545701562,
+        "p95_latency_ms": 45.03189693787135,
+        "throughput_rps": 90.8
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 128,
+      "strategy": "least_connections",
+      "scenario": "server_crash",
+      "repeat": 1,
+      "avg_latency_ms": 36.274796825269895,
+      "p95_latency_ms": 39.26340005091333,
+      "error_rate": 0.001832172957127153,
+      "throughput_rps": 90.63345799981008,
+      "share": {
+        "a": 1139,
+        "b": 451,
+        "c": 1139
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2724,
+        "error_rate": 0.001832172957127153,
+        "avg_latency_ms": 39.82553178024059,
+        "p95_latency_ms": 45.03060536808334,
+        "throughput_rps": 90.8
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 129,
+      "strategy": "ml_latency",
+      "scenario": "server_crash",
+      "repeat": 1,
+      "avg_latency_ms": 36.89360589091215,
+      "p95_latency_ms": 40.42205830410239,
+      "error_rate": 0.0021986075485525836,
+      "throughput_rps": 90.66402894163615,
+      "share": {
+        "a": 1165,
+        "b": 437,
+        "c": 1127
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2723,
+        "error_rate": 0.0021986075485525836,
+        "avg_latency_ms": 40.81701033966532,
+        "p95_latency_ms": 47.07988984591793,
+        "throughput_rps": 90.76666666666667
+      },
+      "fallbacks": 21
+    },
+    {
+      "run_id": 130,
+      "strategy": "bandit",
+      "scenario": "server_crash",
+      "repeat": 1,
+      "avg_latency_ms": 36.584099143526714,
+      "p95_latency_ms": 39.57321880297967,
+      "error_rate": 0.001832172957127153,
+      "throughput_rps": 90.641814925985,
+      "share": {
+        "a": 1728,
+        "b": 388,
+        "c": 613
+      },
+      "logged_rows": 2729,
+      "client_answered": 2729,
+      "client": {
+        "sent": 2729,
+        "ok": 2724,
+        "error_rate": 0.001832172957127153,
+        "avg_latency_ms": 41.11872069470457,
+        "p95_latency_ms": 47.20341826759977,
+        "throughput_rps": 90.8
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 131,
+      "strategy": "round_robin",
+      "scenario": "server_crash",
+      "repeat": 2,
+      "avg_latency_ms": 36.02638760355014,
+      "p95_latency_ms": 38.809500298521016,
+      "error_rate": 0.0018747656542932134,
+      "throughput_rps": 88.57567159042476,
+      "share": {
+        "a": 1106,
+        "b": 456,
+        "c": 1105
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2662,
+        "error_rate": 0.0018747656542932134,
+        "avg_latency_ms": 39.3103609766862,
+        "p95_latency_ms": 44.31547398417024,
+        "throughput_rps": 88.73333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 132,
+      "strategy": "least_connections",
+      "scenario": "server_crash",
+      "repeat": 2,
+      "avg_latency_ms": 36.06711854173753,
+      "p95_latency_ms": 38.917016699997475,
+      "error_rate": 0.0018747656542932134,
+      "throughput_rps": 88.53076608744864,
+      "share": {
+        "a": 1104,
+        "b": 440,
+        "c": 1123
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2662,
+        "error_rate": 0.0018747656542932134,
+        "avg_latency_ms": 39.3888726145963,
+        "p95_latency_ms": 44.06270492472686,
+        "throughput_rps": 88.73333333333333
+      },
+      "fallbacks": 0
+    },
+    {
+      "run_id": 133,
+      "strategy": "ml_latency",
+      "scenario": "server_crash",
+      "repeat": 2,
+      "avg_latency_ms": 36.486998264470685,
+      "p95_latency_ms": 39.88575034381938,
+      "error_rate": 0.0018747656542932134,
+      "throughput_rps": 88.5403036659677,
+      "share": {
+        "a": 1109,
+        "b": 467,
+        "c": 1091
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2662,
+        "error_rate": 0.0018747656542932134,
+        "avg_latency_ms": 39.923994465957115,
+        "p95_latency_ms": 45.77391943894327,
+        "throughput_rps": 88.73333333333333
+      },
+      "fallbacks": 31
+    },
+    {
+      "run_id": 134,
+      "strategy": "bandit",
+      "scenario": "server_crash",
+      "repeat": 2,
+      "avg_latency_ms": 36.11078357771079,
+      "p95_latency_ms": 39.141722949716495,
+      "error_rate": 0.0018747656542932134,
+      "throughput_rps": 88.54682420594754,
+      "share": {
+        "a": 1125,
+        "b": 456,
+        "c": 1086
+      },
+      "logged_rows": 2667,
+      "client_answered": 2667,
+      "client": {
+        "sent": 2667,
+        "ok": 2662,
+        "error_rate": 0.0018747656542932134,
+        "avg_latency_ms": 39.60344425938051,
+        "p95_latency_ms": 44.70832245715428,
+        "throughput_rps": 88.73333333333333
+      },
+      "fallbacks": 2
+    }
+  ]
+}
