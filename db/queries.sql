@@ -104,3 +104,28 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) m ON true
 WHERE r.server_id IS NOT NULL;
+
+-- Live traffic per server in 5-second buckets, last 2 minutes (Phase 7
+-- dashboard): requests per second and p95 latency per backend. The per-minute
+-- view above is too coarse for a page that refreshes every few seconds.
+--
+-- date_bin() rounds each timestamp down to its 5-second bucket. Only COMPLETE
+-- buckets are shown: the one still filling up (received_at after the start of
+-- the current bucket) would read as a sudden drop in traffic. A request is
+-- logged when it finishes, stamped with when it arrived, so a slow request can
+-- still land in a bucket that is already shown; the dashboard redraws the
+-- whole window every refresh, so the number corrects itself.
+CREATE OR REPLACE VIEW dashboard_live_traffic AS
+SELECT s.id                                   AS server_id,
+       s.address || ':' || s.port             AS server,
+       date_bin('5 seconds', r.received_at, TIMESTAMPTZ '2000-01-01') AS bucket,
+       count(*)                               AS requests,
+       round(count(*) / 5.0, 2)               AS requests_per_second,
+       round((percentile_cont(0.95) WITHIN GROUP (ORDER BY r.response_time_ms))::numeric, 2)
+                                              AS p95_latency_ms
+FROM servers s
+JOIN requests r
+  ON r.server_id = s.id
+ AND r.received_at >= date_bin('5 seconds', now() - interval '2 minutes', TIMESTAMPTZ '2000-01-01')
+ AND r.received_at <  date_bin('5 seconds', now(), TIMESTAMPTZ '2000-01-01')
+GROUP BY s.id, server, bucket;

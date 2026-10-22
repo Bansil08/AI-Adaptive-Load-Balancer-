@@ -9,7 +9,7 @@ import pytest
 
 from backend.app import BackendServer
 from experiments.load_generator import LoadGenerator, schedule, step_profile, summarise
-from experiments.run_experiments import RUN_RESULTS_SQL
+from experiments.run_experiments import RUN_RESULTS_SQL, is_full_batch
 from experiments.scenarios import SCENARIOS, BackendSpec
 from tests.test_proxy import request
 
@@ -228,3 +228,11 @@ def test_a_failing_event_still_releases_the_worker_threads(backend_factory):
         LoadGenerator("127.0.0.1", port, workers=16).run(step_profile([(0, 20)]), 0.5, events=[(0.2, broken)])
     time.sleep(0.1)
     assert threading.active_count() <= before
+
+
+def test_only_a_full_batch_may_replace_the_committed_reports():
+    full = [{"scenario": name, "duration": s.duration} for name, s in SCENARIOS.items()]
+    assert is_full_batch(full, repeats=3)
+    assert not is_full_batch(full, repeats=1)                                  # too few repeats
+    assert not is_full_batch(full[:1], repeats=3)                              # one scenario
+    assert not is_full_batch([dict(r, duration=12.0) for r in full], repeats=3)  # shortened runs

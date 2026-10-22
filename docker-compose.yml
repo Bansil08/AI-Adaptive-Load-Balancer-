@@ -71,5 +71,34 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Live dashboard (Flask + Chart.js) on http://127.0.0.1:5050. It reads Postgres
+  # over the Compose network and the LB's admin API on the host (the LB itself
+  # runs on the host: `python -m lb.server`).
+  dashboard:
+    build: ./dashboard
+    image: adaptive-lb-dashboard
+    container_name: adaptive-lb-dashboard
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app/dashboard:ro
+      - ./lb:/app/lb:ro
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      # Inside the Compose network Postgres is "postgres:5432", not localhost:5433.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      LB_ADMIN_URL: http://host.docker.internal:8081
+    command: python -m dashboard.app --host 0.0.0.0 --port 5050
+    ports:
+      - "127.0.0.1:5050:5050"
+    init: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:

@@ -1,6 +1,7 @@
 """Admin HTTP API on its own port, to inspect and change backends at runtime.
 
-  GET    /backends                  list backends (health, circuit state, stats) + pool and DB writer counters
+  GET    /backends                  active strategy, backends (health, circuit state, stats),
+                                    pool and DB writer counters (the dashboard polls this)
   POST   /backends                  add one; body {"address": "127.0.0.1:9004"}
   DELETE /backends/127.0.0.1:9004   drain (wait for its in-flight requests), then remove
 
@@ -121,7 +122,11 @@ class AdminServer:
         path = target.split("?", 1)[0].rstrip("/")
         if path == "/backends":
             if method == "GET":
-                payload = {"backends": self.list_backends()}
+                strategy = self.router.strategy
+                payload = {"strategy": strategy.name, "sticky_sessions": self.router.sticky_sessions,
+                           "backends": self.list_backends()}
+                if hasattr(strategy, "fallbacks"):  # the ML strategies count their fallbacks
+                    payload["fallbacks"] = strategy.fallbacks
                 if self.pool:
                     payload["pool"] = vars(self.pool.counters())
                 if self.db:

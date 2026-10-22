@@ -1,6 +1,6 @@
 """Plot comparison graphs from run_results.
 
-    python -m experiments.plot_results                 # the latest batch of runs
+    python -m experiments.plot_results                 # the latest full batch of runs
     python -m experiments.plot_results --batch baseline-20261022T030000Z
 
 Writes PNGs to experiments/results/, named <prefix>_... where the prefix is
@@ -81,10 +81,21 @@ ORDER BY e.strategy, second
 
 
 def latest_batch(conn) -> str:
-    row = conn.execute("SELECT notes::jsonb ->> 'batch' FROM experiment_runs e JOIN run_results rr ON rr.run_id = e.id"
-                       " WHERE notes IS NOT NULL ORDER BY e.id DESC LIMIT 1").fetchone()
+    """The newest FULL batch: every scenario, 30 s runs, at least 3 repeats per
+    cell. A quick look (`--duration 12 --repeats 1`) is newer but must not
+    replace the committed charts when someone runs `make plots`."""
+    row = conn.execute("""
+        SELECT e.notes::jsonb ->> 'batch' AS batch
+        FROM experiment_runs e JOIN run_results rr ON rr.run_id = e.id
+        WHERE e.notes IS NOT NULL
+        GROUP BY batch
+        HAVING count(DISTINCT e.scenario) = %s
+           AND min((e.notes::jsonb ->> 'duration')::float8) = 30
+           AND count(*) >= 3 * count(DISTINCT e.scenario) * count(DISTINCT e.strategy)
+        ORDER BY max(e.id) DESC LIMIT 1""", (len(SCENARIOS),)).fetchone()
     if row is None:
-        raise SystemExit("no experiment results in the database yet; run python -m experiments.run_experiments")
+        raise SystemExit("no full experiment batch in the database yet; run python -m experiments.run_experiments"
+                         " (or pass --batch)")
     return row[0]
 
 

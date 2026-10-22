@@ -44,7 +44,6 @@ class _BackendState:
     draining: bool = False
     in_flight: int = 0  # leases currently held (requests between acquire and release)
     removed: bool = False
-    added_at: float = field(default_factory=time.time)
 
 
 @dataclass(frozen=True)

@@ -109,7 +109,15 @@ Every feature in this project, the file that implements it, and the CS concept i
 | Model staleness | `lb/strategies/ml_latency.py`, `ml/train.py` | ML / System design | Distribution shift, feedback loops | The supervised model is frozen at training time on round robin / least connections traffic; once it routes, it creates states it never saw (it starves slow backends), and if a backend's behaviour changes the model doesn't learn. A backend it stops using keeps its old recent average, so it may never be retried (no exploration). Retraining on new data, or the bandit's built-in exploration, is the answer. |
 | Inference overhead | `ml/evaluate.py`, `experiments/results/ml_inference.md` | ML / OS | Per-request cost, the GIL | Measured per routing decision for 3 backends: least connections ~4 µs, ML latency ~34 µs (feature lookup + one `predict()` for all backends). The forest's `predict()` took ~0.7 ms (30 trees). With 32 threads deciding at once, 0.52% of decisions waited for the GIL (Python runs one thread's bytecode at a time) and exceeded 2 ms. In the experiments that caused 160 of the ML strategy's 391 fallbacks; the other 231 were the first second of a run, before any heartbeat. |
 | Fallback (graceful degradation) | `lb/strategies/guarded.py` | System design | Fail safe, not fail closed | Both ML strategies run under one wrapper: if the model is missing, a feature is unknown (no fresh heartbeat, no latency history), the prediction throws, returns NaN, or takes over the 2 ms budget, the request goes to least connections instead and a WARNING with the reason and a running count is logged. The budget is checked after the fact (a Python thread can't be interrupted), so a late answer is discarded, not waited for. |
-| Honest evaluation of ML | `experiments/results/comparison_results.md` | System design / Research method | Same harness, same seeds, all strategies in one batch, seeds unseen in training | Measured (4 strategies × 4 scenarios × 3 repeats, seeds 1000–1002): ML latency cut p95 from ~165 ms (least connections) to 30 ms with unequal servers and in the spike by sending 98–100% to the fast server. The bandit reached 68 ms, held back by its 3–4% exploration of each slow server. In the slowdown, ML and the bandit reached 40 ms vs 43 ms; in the crash all tied (~0.2% errors). The win comes from routing on latency, not from the model's accuracy, which is no better than the recent average for normal requests. |
+| Honest evaluation of ML | `experiments/results/comparison_results.md` | System design / Research method | Same harness, same seeds, all strategies in one batch, seeds unseen in training | Final batch: 4 strategies × 4 scenarios × 5 runs, seeds 2000–2004, mean ± SD. ML latency cut p95 from ~165 ms (least connections) to 31–33 ms with unequal servers and in the spike by sending 99% to the fast server; the bandit reached 68–70 ms, held back by its 3–4% exploration of each slow server. In the slowdown ML and least connections were within noise (41.9 ± 2.1 vs 43.6 ± 2.5 ms); in the crash ML was slightly worse (39.6 vs 38.8 ms). The win comes from routing on latency, not from the model's accuracy, which is no better than the recent average for normal requests. |
+| Live dashboard | `dashboard/app.py`, `dashboard/static/dashboard.js` | System design | Polling, read path vs write path | The browser polls small JSON endpoints every 3 s and redraws with Chart.js. The dashboard only reads: the LB's request path never waits for it, because requests reach Postgres through the single DB writer, not through the dashboard. |
+| Two sources of truth | `dashboard/app.py` (`/api/backends`) | System design | Persisted history vs in-memory state | Traffic and latency come from Postgres (what has happened); health, circuit state, in-flight count and the active strategy come from the LB's admin API (what is true now, never written to the DB). If the LB is down the page says so and shows only the last status the DB has. |
+| Time buckets with `date_bin` | `db/queries.sql` (`dashboard_live_traffic`) | DBMS | Grouping time series | `date_bin('5 seconds', received_at, origin)` rounds each timestamp down to its 5-second bucket, so requests per second = rows in the bucket / 5 and p95 is `percentile_cont` over the bucket. It reuses the `(server_id, received_at)` index. |
+| Hiding the incomplete bucket | `db/queries.sql` (`dashboard_live_traffic`) | Statistics / System design | Partial aggregates | The bucket still filling up would show a fake traffic drop on every refresh, so the view stops at the start of the current bucket. |
+| Mean ± standard deviation over repeats | `experiments/run_experiments.py` (`aggregate`), `dashboard/app.py` | Statistics | Sample SD (n − 1), spread vs noise | Each strategy × scenario cell is run 5 times. The report shows mean ± SD and the min–max of p95: a difference smaller than the spread is noise, not a result. |
+| Guarding the committed results | `experiments/run_experiments.py` (`is_full_batch`), `experiments/plot_results.py` (`latest_batch`) | System design / Research method | Reproducibility | A shortened or one-scenario run writes to `results/partial/`, and `make plots` redraws the newest *full* batch, so a quick test can never silently replace the reported numbers. |
+| Single point of failure | `README.md` (Limitations) | System design | High availability, active-passive failover | One LB process fronts everything; if it dies, every backend is unreachable. Standard fix: a standby LB that watches the active one's heartbeats and takes over a floating virtual IP (VRRP / keepalived) after N missed beats, with fencing so both never serve at once (split brain). |
+| Makefile | `Makefile` | Tooling | Build automation | `make setup / up / test / lb / dashboard / experiments` wrap the documented commands; each target is one readable line, so nothing is hidden. |
 
 ## Deadlock prevention: lock order
 
@@ -201,3 +209,67 @@ Execution Time: 0.267 ms
 That turns the full export from impractical into 2.8 s (measured). Without the index it was not run: at the measured ~108 ms per request, 1.19M requests works out to roughly 36 hours (arithmetic, not a measurement; the planner's own cost estimate was 61 billion units).
 
 **What indexes cost.** 36 MB + 62 MB of disk, and every INSERT must also update both B-trees (the insert benchmark ran with both indexes present). Postgres does not create indexes on foreign-key columns by itself; they are added where a query needs them, and the `EXPLAIN ANALYZE` above is how you show they are needed.
+
+## Interview questions this project answers
+
+Short answers, each pointing at the code that backs it. Numbers are measured (see `README.md` and `experiments/results/`).
+
+**1. Why a fixed thread pool with a bounded queue instead of a new thread per connection?**
+Thread-per-connection has no upper bound: a traffic spike creates thousands of threads, each with its own stack. With the pool (`lb/server.py`, `lb/bounded_queue.py`) thread count is fixed. When the queue is full the listener stops calling `accept()`, so overload backs up into the kernel's listen backlog (backpressure). Measured: similar throughput up to 200 clients, but 437 threads vs a fixed 257 at 500 clients.
+
+**2. How does your bounded queue avoid busy-waiting and lost wake-ups?**
+One mutex and two condition variables, `not_full` and `not_empty` (`lb/bounded_queue.py`). `wait()` atomically releases the mutex and sleeps, so no wake-up can slip in between the check and the sleep. Waiters re-check their condition in a `while` loop, because another thread may take the slot first and wake-ups can be spurious.
+
+**3. What is the readers-writers problem, and where do you use it?**
+Per-backend stats (`lb/stats.py`) are read on every routing decision but written only when a request starts or ends. `lb/rwlock.py` lets many readers in together and a writer in alone. It prefers writers: a waiting writer blocks new readers, otherwise a steady stream of readers could starve it forever.
+
+**4. How do you prevent deadlock?**
+By breaking circular wait. No code path holds two locks at once. If one ever must, it follows a documented global lock order (`lb/server.py` docstring, the table above). Locks are never held while logging, doing I/O or calling a strategy, because `logging` has its own lock.
+
+**5. How does graceful shutdown work, and why does the signal handler do almost nothing?**
+SIGINT/SIGTERM sets a flag. The listener then closes the listening socket, workers finish in-flight and queued requests (up to `shutdown_timeout`), and the DB writer flushes its queue last. The handler runs on the main thread between bytecodes, so taking any lock there (even logging's) could deadlock against the code it interrupted.
+
+**6. TCP is a byte stream. How do you know where an HTTP request ends?**
+Read until the blank line `\r\n\r\n` that ends the headers, then exactly `Content-Length` bytes (or decode chunked encoding) (`lb/http_parser.py`, `SocketReader`). One `recv()` can return half a request or two, so leftover bytes stay buffered. Ambiguous framing (two different Content-Lengths, or both Transfer-Encoding and Content-Length) is rejected because it enables request smuggling.
+
+**7. 502 vs 503 vs 504?**
+502 Bad Gateway: the backend refused, reset or sent garbage. 503 Service Unavailable: no backend was available at all. 504 Gateway Timeout: the backend didn't connect or answer in time (`lb/proxy.py`, `_attempt`). Keeping them distinct tells an operator whether a backend is broken, missing, or slow.
+
+**8. Why are only GET and HEAD retried?**
+Retrying is only safe for idempotent requests. A POST whose connection broke may already have been processed, and resending it could act twice. Retries go to a different backend with exponential backoff, at most 2 (`lb/proxy.py`), and only when there was no usable answer: a 500 is passed through, not retried.
+
+**9. Health checks and a circuit breaker: isn't that redundant?**
+No. Health checks (`lb/health.py`) are active: synthetic TCP + `GET /health` probes every 2 s, needing 2 failures to mark a backend down and 2 passes to bring it back. They notice a dead backend that gets no traffic and confirm recovery. The breaker (`lb/circuit_breaker.py`) is passive: 5 consecutive real failures open it at once, and after a 5 s cooldown a few half-open trial requests decide whether to close it.
+
+**10. Why UDP for heartbeats?**
+A heartbeat is a "latest value" report every second, so a lost one is simply replaced by the next. TCP's retransmission and ordering would only delay fresh data behind stale data. UDP can reorder and duplicate datagrams, so each carries `(agent start time, sequence number)` and older ones are dropped (`lb/heartbeat.py`).
+
+**11. What does connection pooling save, and how do you avoid reusing a dead connection?**
+It saves the TCP three-way handshake per request and the TIME_WAIT socket each close leaves behind. Measured: +29–35% throughput and 0.5 instead of 1,000 backend handshakes per 1,000 requests. Before reusing an idle connection, a non-blocking `recv(1, MSG_PEEK)` checks whether the backend has closed it (`lb/connection_pool.py`). If the backend closes it just as it is reused, idempotent requests get one retry on a fresh connection.
+
+**12. How does the token-bucket rate limiter work, and why no timer thread?**
+Each client IP has a bucket of `burst` tokens refilled at `rate` per second. A request takes one token; an empty bucket means 429 with `Retry-After` (`lb/rate_limiter.py`). Refill is lazy: on each check, `min(burst, tokens + elapsed × rate)`. That costs O(1) and needs no thread. The check-and-decrement happens under a lock so two threads can't spend the same token.
+
+**13. Why one database writer thread instead of each worker inserting its row?**
+A per-request insert puts a network round trip and a commit (fsync) on the request path and makes 32 connections contend. Workers instead do a non-blocking `put()`, and one writer inserts batches of up to 200 rows per transaction (`lb/db_writer.py`): 52,512 vs 3,060 rows/s. A database outage only fills the queue. When it is full, records are dropped and counted rather than blocking clients.
+
+**14. What did your indexes change, and why that column order?**
+`requests(server_id, received_at)`: equality column first, range column second, so "server X in the last 15 minutes" is one contiguous slice of the B-tree. With `EXPLAIN ANALYZE` on 1.2M rows the dashboard queries went from 19–34 ms to under 1 ms. The `LATERAL` "latest heartbeat before each request" lookup went from 10.8 s to 0.27 ms for 100 requests: one index probe instead of a scan per row.
+
+**15. How do you compute p95 latency, and why p95 rather than the average?**
+In SQL, with `percentile_cont(0.95) WITHIN GROUP (ORDER BY response_time_ms)` (`db/queries.sql`, `RUN_RESULTS_SQL`). The average hides the tail: in the sudden-slowdown scenario least connections' average was *above* its p95, because a few 300 ms answers raised the average while staying in the slowest 5%. Users feel the tail, so the comparison leads with p95.
+
+**16. How did you make the experiments fair and repeatable?**
+Each run starts fresh backend processes and a fresh LB, so no state carries over. Every strategy gets the same seeds, so it sees the identical sequence of arrivals. The load generator is open-loop (it sends on schedule even when the server is slow, avoiding coordinated omission). Every cell is repeated 5 times and reported as mean ± SD. The results are computed in SQL and cross-checked against the client's own count on every run.
+
+**17. Why split the ML data by time and not randomly?**
+Consecutive requests are almost identical (same backend state a few milliseconds apart), so a random split puts near-copies of each test row in training, and the model gets credit for memorising them. `ml/train.py` trains on the first 70% of each run and tests on the last 30%, the way the model is used live: on a future it has never seen. Measured: a random split scored the random forest at 6.8 ms MAE, the time split at 80.5 ms.
+
+**18. Linear regression beat the random forest. Why?**
+Part of the test period was round robin's growing backlog, with response times up to 7.6 s, beyond anything in training (3.5 s). A tree can only predict values it has seen, while a line extrapolates. For normal requests (under 200 ms), no model beat simply predicting the recent average. The unlimited-depth tree reached 0.0 ms training MAE and 80.5 ms test MAE: textbook overfitting.
+
+**19. Exploration vs exploitation: how does your bandit balance them?**
+Epsilon-greedy (`lb/strategies/bandit.py`). With probability ε = 0.1 it picks a random healthy backend (explore); otherwise it picks the one with the best mean reward, where reward = −latency over that backend's last 50 requests (exploit). The sliding window forgets old rewards, so it notices a backend that slows down. The measured cost of exploring: it keeps sending a few percent to slow backends, which shows up in its p95.
+
+**20. What happens if the ML model breaks, and is it worth its cost?**
+Both ML strategies run inside `GuardedStrategy` (`lb/strategies/guarded.py`). A missing model, an unknown feature, an exception, NaN output or a decision over 2 ms means least connections decides that request, and a counted warning is logged. A decision costs ~34 µs vs ~4 µs for least connections. It pays off only where backends differ in speed, and the win comes from routing on latency, not from the model's accuracy (see the README's results section).

@@ -2,6 +2,7 @@
 
     python -m ml.export_data                       # every Phase 5-style run (round robin / least connections)
     python -m ml.export_data --batch baseline-20261022T030347Z
+    python -m ml.export_data --batch latest        # the newest Phase 5 baseline batch (what `make train` uses)
 
 One row per request a backend served, with the four features the load
 balancer could see when it routed that request (lb/strategies/ml_latency.py,
@@ -133,14 +134,28 @@ def write_csv(rows: list[dict], path: Path = DATA_PATH) -> Path:
     return path
 
 
+def latest_baseline_batch(conn: psycopg.Connection) -> str:
+    row = conn.execute("SELECT notes::jsonb ->> 'batch' FROM experiment_runs"
+                       " WHERE notes::jsonb ->> 'batch' LIKE 'baseline-%' AND ended_at IS NOT NULL"
+                       " ORDER BY id DESC LIMIT 1").fetchone()
+    if row is None:
+        raise SystemExit("no baseline batch yet; run python -m experiments.run_experiments"
+                         " --strategies round_robin least_connections --seed 42 --repeats 3")
+    return row[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--batch", help="only runs of this experiment batch (default: all finished runs)")
+    parser.add_argument("--batch", help="only runs of this experiment batch; 'latest' = the newest baseline "
+                                        "batch (default: all finished runs)")
     parser.add_argument("--strategies", nargs="+", default=list(BASELINE_STRATEGIES),
                         help="only runs routed by these strategies (default: the two non-ML baselines)")
     parser.add_argument("--out", type=Path, default=DATA_PATH)
     args = parser.parse_args()
     with psycopg.connect(database_url()) as conn:
+        if args.batch == "latest":
+            args.batch = latest_baseline_batch(conn)
+            print(f"batch {args.batch}")
         rows = export(conn, args.batch, tuple(args.strategies))
     if not rows:
         raise SystemExit("no requests found; run python -m experiments.run_experiments first")
