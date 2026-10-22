@@ -1,6 +1,6 @@
 """Admin HTTP API on its own port, to inspect and change backends at runtime.
 
-  GET    /backends                  list backends (health, circuit state, stats) + pool counters
+  GET    /backends                  list backends (health, circuit state, stats) + pool and DB writer counters
   POST   /backends                  add one; body {"address": "127.0.0.1:9004"}
   DELETE /backends/127.0.0.1:9004   drain (wait for its in-flight requests), then remove
 
@@ -22,6 +22,7 @@ import socket
 import threading
 import time
 from http import HTTPStatus
+from typing import TYPE_CHECKING
 
 from lb.config import AdminSettings
 from lb.connection_pool import ConnectionPool
@@ -30,6 +31,9 @@ from lb.http_parser import Headers, HTTPResponse, ParseError, SocketReader, read
 from lb.proxy import close_gracefully
 from lb.router import Router
 from lb.strategies.base import Backend
+
+if TYPE_CHECKING:
+    from lb.db_writer import DBWriter
 
 log = logging.getLogger(__name__)
 
@@ -50,8 +54,10 @@ def json_response(status: int, payload) -> bytes:
 
 class AdminServer:
     def __init__(self, router: Router, settings: AdminSettings = AdminSettings(),
-                 health: HealthChecker | None = None, pool: ConnectionPool | None = None):
+                 health: HealthChecker | None = None, pool: ConnectionPool | None = None,
+                 db: "DBWriter | None" = None):
         self.router = router
+        self.db = db
         self.settings = settings
         self.health = health
         self.pool = pool
@@ -118,6 +124,8 @@ class AdminServer:
                 payload = {"backends": self.list_backends()}
                 if self.pool:
                     payload["pool"] = vars(self.pool.counters())
+                if self.db:
+                    payload["db_writer"] = vars(self.db.counters())
                 return 200, payload
             if method == "POST":
                 return self.add_backend(body)
@@ -165,6 +173,8 @@ class AdminServer:
         # Starts down; the health checker brings it up after M passed checks.
         if not self.router.add_backend(backend, healthy=self.health is None):
             return 409, {"error": f"{backend} is already a backend"}
+        if self.db:
+            self.db.log_status(backend, "up" if self.router.is_healthy(backend) else "down")
         log.warning("admin: added backend %s", backend)
         return 201, {"added": str(backend), "healthy": self.router.is_healthy(backend)}
 
@@ -182,6 +192,8 @@ class AdminServer:
         drained, left = result
         if self.pool:
             self.pool.discard_backend(backend)
+        if self.db:
+            self.db.log_status(backend, "removed")  # soft delete: its history keeps a valid server_id
         # Stats are kept: a request still in flight after a drain timeout
         # will decrement its counters later, and deleting the entry would let
         # that recreate it at -1 active connections.

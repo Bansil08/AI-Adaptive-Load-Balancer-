@@ -21,6 +21,7 @@ and release in reverse:
     7. ConnectionPool._lock        (lb/connection_pool.py)
     8. RateLimiter._lock           (lb/rate_limiter.py)
     9. strategy locks              (lb/strategies/*)
+   10. DBWriter._counters_lock     (lb/db_writer.py; its queue is a BoundedQueue, item 1)
 A cycle "A waits for B while B waits for A" needs two threads to take the same
 locks in opposite orders; one global order makes that impossible.
 
@@ -40,6 +41,7 @@ from lb import config
 from lb.admin import AdminServer
 from lb.bounded_queue import BoundedQueue, QueueClosed
 from lb.connection_pool import ConnectionPool
+from lb.db_writer import DBWriter
 from lb.health import HealthChecker
 from lb.heartbeat import HeartbeatListener
 from lb.proxy import Proxy, close_gracefully, error_response
@@ -266,13 +268,15 @@ def main() -> None:
     )
     router = Router(cfg.backends, STRATEGIES[cfg.strategy](), cfg.breaker, cfg.sticky_sessions)
     pool = ConnectionPool(cfg.pool, cfg.proxy.backend_connect_timeout)
+    db = DBWriter(config.database_url(), cfg.database) if cfg.database.enabled else None
     proxy = Proxy(router, cfg.proxy, pool, cfg.retry,
-                  RateLimiter(cfg.rate_limit) if cfg.rate_limit.enabled else None)
+                  RateLimiter(cfg.rate_limit) if cfg.rate_limit.enabled else None, db)
     lb = LoadBalancer(router, cfg.host, args.port or cfg.port, cfg.proxy, cfg.concurrency,
                       thread_per_connection=args.thread_per_connection, proxy=proxy)
-    health = HealthChecker(router, cfg.health)
-    heartbeat = HeartbeatListener(router, cfg.heartbeat.host, cfg.heartbeat.port) if cfg.heartbeat.port else None
-    admin = AdminServer(router, cfg.admin, health, pool) if cfg.admin.port else None
+    health = HealthChecker(router, cfg.health, db)
+    heartbeat = (HeartbeatListener(router, cfg.heartbeat.host, cfg.heartbeat.port, db)
+                 if cfg.heartbeat.port else None)
+    admin = AdminServer(router, cfg.admin, health, pool, db) if cfg.admin.port else None
 
     def on_signal(signum, frame):
         lb.shutdown()
@@ -289,6 +293,12 @@ def main() -> None:
 
     try:
         host, port = lb.start()
+        if db:
+            # Connects lazily in its own thread: a database that is down slows
+            # nothing here; records wait in the queue until it is reachable.
+            db.start()
+            log.info("request log: PostgreSQL, batches of %d or every %d ms",
+                     cfg.database.batch_size, cfg.database.flush_interval_ms)
         health.start()
         if heartbeat:
             log.info("heartbeats: UDP %s:%d", *heartbeat.start())
@@ -309,6 +319,10 @@ def main() -> None:
             if component:
                 component.stop()
         pool.close_all()
+        if db:
+            # Last, after every producer has stopped, so nothing is queued
+            # after the final flush.
+            db.stop()
     log.info("stopped")
 
 

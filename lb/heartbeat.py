@@ -28,9 +28,13 @@ import math
 import socket
 import threading
 import time
+from typing import TYPE_CHECKING
 
 from lb.router import Router
 from lb.strategies.base import Backend
+
+if TYPE_CHECKING:
+    from lb.db_writer import DBWriter
 
 log = logging.getLogger(__name__)
 
@@ -61,8 +65,10 @@ def parse_heartbeat(data: bytes) -> tuple[Backend, float, int, float, float, int
 
 
 class HeartbeatListener:
-    def __init__(self, router: Router, host: str = "127.0.0.1", port: int = 9100):
+    def __init__(self, router: Router, host: str = "127.0.0.1", port: int = 9100,
+                 db: "DBWriter | None" = None):
         self.router = router
+        self.db = db  # optional: persist every accepted heartbeat into server_metrics (Phase 4)
         self._address = (host, port)
         self._sock: socket.socket | None = None
         self._stop = threading.Event()
@@ -105,6 +111,8 @@ class HeartbeatListener:
             return False
         self._last_seen[backend] = (started_at, seq)
         self.router.stats.record_heartbeat(backend, cpu, memory, conns, received_at)
+        if self.db:
+            self.db.log_metric(backend, cpu, memory, conns)
         self.accepted += 1
         return True
 

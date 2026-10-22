@@ -132,6 +132,17 @@ class AdminSettings:
 
 
 @dataclass(frozen=True)
+class DatabaseSettings:
+    """Request / health / metric logging to PostgreSQL (lb/db_writer.py)."""
+
+    enabled: bool = False        # off unless configured (lb.toml turns it on)
+    batch_size: int = 200        # N: write a batch once it has this many records...
+    flush_interval_ms: int = 200 # T: ...or this long after its first record arrived
+    queue_size: int = 10_000     # records waiting for the writer; when full, new ones are dropped
+    shutdown_timeout: float = 5.0  # max seconds to flush what is left on shutdown
+
+
+@dataclass(frozen=True)
 class LBConfig:
     host: str
     port: int
@@ -146,6 +157,7 @@ class LBConfig:
     rate_limit: RateLimitSettings = RateLimitSettings()
     heartbeat: HeartbeatSettings = HeartbeatSettings()
     admin: AdminSettings = AdminSettings()
+    database: DatabaseSettings = DatabaseSettings()
     sticky_sessions: bool = False
 
 
@@ -158,6 +170,7 @@ _SECTIONS = {
     "rate_limit": ("rate_limit", RateLimitSettings),
     "heartbeat": ("heartbeat", HeartbeatSettings),
     "admin": ("admin", AdminSettings),
+    "database": ("database", DatabaseSettings),
 }
 
 
@@ -193,7 +206,7 @@ def load_lb_config(path: Path | str = DEFAULT_LB_CONFIG) -> LBConfig:
         sticky = data.get("sticky_sessions", False)
         if not isinstance(sticky, bool):
             raise ValueError("sticky_sessions must be true or false")
-        _check_phase3(**sections)
+        _check_sections(**sections)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{path}: {exc}") from None
     # TOML allows inf and nan; socket.settimeout(inf) and Thread.join(inf)
@@ -245,7 +258,7 @@ def _read_section(table: dict, cls, name: str):
     return cls(**values)
 
 
-def _check_phase3(health, breaker, pool, retry, rate_limit, heartbeat, admin) -> None:
+def _check_sections(health, breaker, pool, retry, rate_limit, heartbeat, admin, database) -> None:
     def require(ok: bool, message: str) -> None:
         if not ok:
             raise ValueError(message)
@@ -263,6 +276,9 @@ def _check_phase3(health, breaker, pool, retry, rate_limit, heartbeat, admin) ->
             "[rate_limit] rate must be positive, burst and max_clients at least 1")
     require(0 <= heartbeat.port <= 65535 and 0 <= admin.port <= 65535, "ports must be 0-65535")
     require(admin.drain_timeout >= 0, "[admin] drain_timeout must not be negative")
+    require(database.batch_size >= 1 and database.flush_interval_ms >= 1 and database.queue_size >= 1,
+            "[database] batch_size, flush_interval_ms and queue_size must be at least 1")
+    require(database.shutdown_timeout >= 0, "[database] shutdown_timeout must not be negative")
 
 
 def _whole_number(value, name: str) -> int:

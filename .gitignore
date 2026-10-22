@@ -18,6 +18,8 @@ experiments/results/*
 !experiments/results/pooling_benchmark.json
 !experiments/results/failover_demo.md
 !experiments/results/failover_demo.json
+!experiments/results/db_benchmark.md
+!experiments/results/db_benchmark.json
 
 # OS / editor
 .DS_Store

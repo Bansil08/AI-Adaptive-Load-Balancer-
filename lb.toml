@@ -64,3 +64,10 @@ port = 9100               # 0 disables
 host = "127.0.0.1"
 port = 8081               # 0 disables
 drain_timeout = 30.0      # max seconds a DELETE waits for in-flight requests
+
+[database]  # request / health-check / heartbeat log in PostgreSQL (credentials from .env)
+enabled = true
+batch_size = 200          # N: write a batch when it has this many records...
+flush_interval_ms = 200   # T: ...or this long after its first record, whichever comes first
+queue_size = 10000        # records waiting to be written; when full, new ones are dropped (counted)
+shutdown_timeout = 5.0    # max seconds to flush the rest on shutdown
