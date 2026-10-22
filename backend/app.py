@@ -7,6 +7,7 @@ Run:  python -m backend.app --port 9001 --name fast --delay-ms 20
 import argparse
 import json
 import random
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +33,14 @@ class BackendServer(ThreadingHTTPServer):
         self._in_flight = 0
         self._in_flight_lock = threading.Lock()
 
+    def handle_error(self, request, client_address):
+        # A client that disconnects or resets mid-request is normal (the LB's
+        # health checks and lingering close do it). socketserver would print a
+        # full traceback for each; only report real errors.
+        if isinstance(sys.exc_info()[1], OSError):
+            return
+        super().handle_error(request, client_address)
+
     def in_flight(self) -> int:
         with self._in_flight_lock:
             return self._in_flight
@@ -45,6 +54,14 @@ class BackendHandler(BaseHTTPRequestHandler):
     # HTTP/1.1 so every response carries Content-Length (needed for keep-alive,
     # which Phase 3's connection pooling relies on).
     protocol_version = "HTTP/1.1"
+    # TCP_NODELAY (Nagle off). http.server sends the headers and the body as two
+    # writes; with Nagle on, the body waits until the headers are ACKed, and the
+    # receiver delays that ACK (up to ~40 ms) hoping to piggyback it. On a fresh
+    # connection Linux ACKs the first packets at once, so this never showed with
+    # a new connection per request; on a pooled keep-alive connection it stalled
+    # every response (measured: 71 ms instead of 25 ms through the LB to the
+    # Docker backends). nginx, Go and Node set TCP_NODELAY by default.
+    disable_nagle_algorithm = True
     server: BackendServer
 
     def do_GET(self):
