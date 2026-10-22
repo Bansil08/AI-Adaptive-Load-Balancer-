@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>adaptive-lb dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  <!-- Chart.js, pinned to an exact version. -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>adaptive-lb</h1>
+  <div class="status-row">
+    <span id="lb-status" class="pill">connecting…</span>
+    <span class="muted">Refreshes every <span id="interval"></span> s · last update <span id="updated">–</span></span>
+  </div>
+  <p id="error" class="error" role="alert" hidden></p>
+
+  <!-- The takeaway of the selected experiment batch, computed from its data (dashboard/summary.py). -->
+  <section id="headline" class="banner" hidden>
+    <p class="banner-kicker">Headline result</p>
+    <p id="headline-text" class="banner-text"></p>
+    <div id="winner-cards" class="cards"></div>
+  </section>
+</header>
+
+<main>
+  <section class="controls" aria-label="Live controls">
+    <div class="control">
+      <label for="strategy-select">Routing strategy</label>
+      <div class="inline">
+        <span id="strategy-swatch" class="swatch"></span>
+        <select id="strategy-select">
+          <option value="round_robin">Round robin</option>
+          <option value="least_connections">Least connections</option>
+          <option value="ml_latency">ML latency</option>
+          <option value="bandit">Bandit</option>
+        </select>
+      </div>
+      <span id="fallbacks" class="muted small" hidden></span>
+    </div>
+    <div class="control">
+      <span class="control-label">Demo load</span>
+      <div id="load-buttons" class="buttons">
+        <button type="button" data-rate="30">30 req/s</button>
+        <button type="button" data-rate="60">60 req/s</button>
+        <button type="button" data-rate="120">120 req/s</button>
+        <button type="button" data-rate="0">Stop</button>
+      </div>
+      <span id="load-status" class="muted small">stopped</span>
+    </div>
+    <p class="muted small control-help">Try it: start load, click <em>Slow +150 ms</em> on a backend below, then
+      switch to ML latency and watch its traffic drop on the requests/s chart. Dashed lines mark each action.</p>
+  </section>
+
+  <section>
+    <h2>Backends</h2>
+    <div class="table-wrap"><table id="backends">
+      <thead><tr>
+        <th>Backend</th><th>Health</th><th>Circuit breaker</th><th class="num">In flight</th>
+        <th class="num">Requests (15 min)</th><th class="num">Retried</th><th class="num">Error rate (15 min)</th>
+        <th class="num">CPU / mem</th><th>Fault injection</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section class="grid2">
+    <figure>
+      <figcaption>Requests per second, per backend <span class="muted">(5 s buckets, last 2 min)</span></figcaption>
+      <div class="chart"><canvas id="rps-chart" role="img" aria-label="Requests per second per backend"></canvas></div>
+    </figure>
+    <figure>
+      <figcaption>p95 latency per backend, ms <span class="muted">(5 s buckets, last 2 min)</span>
+        <span class="hint">lower is better</span></figcaption>
+      <div class="chart"><canvas id="p95-chart" role="img" aria-label="p95 latency per backend"></canvas></div>
+    </figure>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Experiment results</h2>
+      <label>Batch <select id="batch"></select></label>
+    </div>
+    <p class="muted">Each run: fresh backends and LB, 30 s of open-loop load; mean ± standard deviation over
+      the repeats, min–max in brackets.</p>
+    <p id="results-source" class="note" hidden></p>
+    <div id="experiment-charts" class="grid4"></div>
+    <div class="table-wrap"><table id="experiments">
+      <thead><tr>
+        <th>Scenario</th><th>Strategy</th><th class="num">Runs</th><th class="num">p95 latency (ms)</th>
+        <th class="num">Avg latency (ms)</th><th class="num">Error rate</th><th class="num">Throughput (req/s)</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+</main>
+<script src="{{ url_for('static', filename='results.js') }}"></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>

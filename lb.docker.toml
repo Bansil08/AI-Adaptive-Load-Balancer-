@@ -1,0 +1,85 @@
+# Load balancer configuration for the Docker Compose stack (`docker compose up`).
+# Same settings as lb.toml except where a container differs; see lb.toml for
+# what each one means.
+
+strategy = "round_robin"   # switch at runtime from the dashboard (or POST /strategy on the admin API)
+sticky_sessions = false
+
+# Inside the Compose network each backend is reached by its service name.
+backends = [
+    "backend-fast:9001",
+    "backend-medium:9002",
+    "backend-slow:9003",
+]
+
+[listen]
+host = "0.0.0.0"           # inside the container; published only on the host's loopback
+port = 8080
+
+[timeouts]
+client = 3.0
+backend_connect = 2.0
+backend_read = 30.0
+
+[concurrency]
+workers = 64
+queue_size = 256
+shutdown_timeout = 10.0
+
+[health]
+interval = 1.0             # 1 s (lb.toml: 2 s) so a crash shows on the dashboard quickly
+timeout = 0.5
+unhealthy_threshold = 2
+healthy_threshold = 2
+path = "/health"
+
+[circuit_breaker]
+failure_threshold = 5
+cooldown = 5.0
+half_open_trials = 2
+
+[pool]
+size = 16
+idle_timeout = 30.0
+
+[retries]
+max_retries = 2
+backoff_base = 0.05
+backoff_max = 1.0
+
+[rate_limit]
+# All demo load comes from the dashboard container, i.e. one client IP, at up
+# to 120 req/s: the limit sits above that so the demo shows routing, not 429s.
+enabled = true
+rate = 300.0
+burst = 600.0
+
+[heartbeat]
+host = "0.0.0.0"           # the backend containers send here as lb:9100 (not published)
+port = 9100
+
+[admin]
+# Reachable by the dashboard container, so not loopback-only: changes (POST,
+# DELETE) need the X-Admin-Token from ADMIN_TOKEN. Published only on the
+# host's loopback.
+host = "0.0.0.0"
+port = 8081
+drain_timeout = 30.0
+
+[database]
+enabled = true
+batch_size = 200
+flush_interval_ms = 200
+queue_size = 10000
+shutdown_timeout = 5.0
+
+[ml_latency]
+model_path = "ml/models/latency_model.joblib"   # shipped in the repo
+time_budget_ms = 2.0
+
+[bandit]
+epsilon = 0.1
+window = 50
+failure_penalty_ms = 1000.0
+seed = 42
+time_budget_ms = 2.0

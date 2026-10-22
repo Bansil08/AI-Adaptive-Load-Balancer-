@@ -1,6 +1,25 @@
+# The whole system in one command:  docker compose up -d --build
+#   http://127.0.0.1:5050  dashboard (live charts, controls, experiment results)
+#   http://127.0.0.1:8080  load balancer        http://127.0.0.1:8081/backends  its admin API
+#
+# No .env is needed: every ${VAR:-default} below falls back to the value in
+# .env.example. A .env file, if present, overrides them (Compose reads it).
+# Every port is published on this machine's loopback only.
+#
+# The code is mounted read-only into the containers, so editing it needs only
+# `docker compose restart <service>`, not a rebuild; the images only add the
+# pinned dependencies.
+
+x-postgres-env: &postgres-env
+  POSTGRES_USER: ${POSTGRES_USER:-adaptive_lb}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adaptive_lb_dev}
+  POSTGRES_DB: ${POSTGRES_DB:-adaptive_lb}
+  # Inside the Compose network Postgres is "postgres:5432", not localhost:5433.
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+
 # Shared settings for the three test backends (YAML anchor, merged with <<: below).
-# backend/Dockerfile is the stock Python image plus psutil (for the heartbeat
-# agent); the code is mounted read-only, so code edits need no rebuild.
+# backend/Dockerfile is the stock Python image plus psutil (for the heartbeat agent).
 x-backend: &backend
   build: ./backend
   image: adaptive-lb-backend
@@ -9,15 +28,20 @@ x-backend: &backend
     - ./backend:/app/backend:ro
   environment:
     PYTHONUNBUFFERED: "1"  # show print() output in `docker compose logs` immediately
+    # --allow-control turns on fault injection (POST /fault), which the
+    # dashboard's buttons use; this token must accompany every such request.
+    ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
   # A tiny init process as PID 1 forwards SIGTERM to Python, so `docker compose
   # stop` is instant. (PID 1 ignores signals it has no handler for, so without
   # this Docker waits 10 s and then sends SIGKILL.)
   init: true
   restart: unless-stopped
-  # Heartbeats go to the LB running on the host. Docker Desktop provides the
-  # host.docker.internal name; on Linux this line maps it to the host gateway
-  # (there, set [heartbeat] host = "0.0.0.0" in lb.toml, since the datagrams
-  # arrive on the bridge interface rather than loopback).
+  # Heartbeats go to two load balancers, each knowing the backend by its own
+  # address: the LB container (lb:9100, as backend-fast:9001) and an LB run on
+  # the host with `make lb` (host.docker.internal:9100, as 127.0.0.1:9001).
+  # Whichever isn't running simply doesn't receive them. Docker Desktop
+  # provides host.docker.internal; on Linux this line maps it to the host
+  # gateway (there, a host LB needs [heartbeat] host = "0.0.0.0" in lb.toml).
   extra_hosts:
     - "host.docker.internal:host-gateway"
 
@@ -29,8 +53,8 @@ services:
     <<: *backend
     container_name: adaptive-lb-backend-fast
     command: >-
-      python -m backend.app --host 0.0.0.0 --port 9001 --name fast --delay-ms 20
-      --heartbeat host.docker.internal:9100 --advertise 127.0.0.1:9001
+      python -m backend.app --host 0.0.0.0 --port 9001 --name fast --delay-ms 20 --allow-control
+      --heartbeat lb:9100=backend-fast:9001 --heartbeat host.docker.internal:9100=127.0.0.1:9001
     ports:
       - "127.0.0.1:9001:9001"
 
@@ -38,8 +62,8 @@ services:
     <<: *backend
     container_name: adaptive-lb-backend-medium
     command: >-
-      python -m backend.app --host 0.0.0.0 --port 9002 --name medium --delay-ms 60
-      --heartbeat host.docker.internal:9100 --advertise 127.0.0.1:9002
+      python -m backend.app --host 0.0.0.0 --port 9002 --name medium --delay-ms 60 --allow-control
+      --heartbeat lb:9100=backend-medium:9002 --heartbeat host.docker.internal:9100=127.0.0.1:9002
     ports:
       - "127.0.0.1:9002:9002"
 
@@ -47,28 +71,100 @@ services:
     <<: *backend
     container_name: adaptive-lb-backend-slow
     command: >-
-      python -m backend.app --host 0.0.0.0 --port 9003 --name slow --delay-ms 150
-      --heartbeat host.docker.internal:9100 --advertise 127.0.0.1:9003
+      python -m backend.app --host 0.0.0.0 --port 9003 --name slow --delay-ms 150 --allow-control
+      --heartbeat lb:9100=backend-slow:9003 --heartbeat host.docker.internal:9100=127.0.0.1:9003
     ports:
       - "127.0.0.1:9003:9003"
 
   postgres:
     image: postgres:16
     container_name: adaptive-lb-postgres
-    # Credentials come from .env so no secrets live in this file.
-    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-adaptive_lb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adaptive_lb_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-adaptive_lb}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       # Named volume: data survives `docker compose down` (use `down -v` to wipe).
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      # pg_isready only reports "accepting connections"; it is what
-      # `depends_on: condition: service_healthy` will wait on in later phases.
+      # pg_isready only reports "accepting connections"; `depends_on:
+      # condition: service_healthy` below waits on it.
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+
+  # The load balancer, configured by lb.docker.toml. On start it applies the
+  # schema (idempotent), so a fresh database needs no manual step. To run the
+  # LB from source on the host instead: `docker compose stop lb`, then `make lb`.
+  lb:
+    build: ./lb
+    image: adaptive-lb-lb
+    container_name: adaptive-lb-lb
+    working_dir: /app
+    volumes:
+      - ./lb:/app/lb:ro
+      - ./scripts:/app/scripts:ro
+      - ./db:/app/db:ro
+      - ./ml/models:/app/ml/models:ro        # the shipped latency model, for the ml_latency strategy
+      - ./lb.docker.toml:/app/lb.docker.toml:ro
+    environment:
+      <<: *postgres-env
+      PYTHONUNBUFFERED: "1"
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+    # --quiet: warnings only (failovers, fallbacks, strategy switches); a line
+    # per request at 100 req/s would flood `docker compose logs`.
+    command: sh -c "python scripts/init_db.py && exec python -m lb.server --config lb.docker.toml --quiet"
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    init: true
+    # SIGTERM drains in-flight requests and flushes the request log; give it time.
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8081), 2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Live dashboard (Flask + Chart.js) on http://127.0.0.1:5050. It reads Postgres,
+  # the LB's admin API, and sends the controls (strategy, faults, demo load).
+  dashboard:
+    build: ./dashboard
+    image: adaptive-lb-dashboard
+    container_name: adaptive-lb-dashboard
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app/dashboard:ro
+      - ./lb:/app/lb:ro
+      - ./docs/data:/app/docs/data:ro   # committed results, shown until this database has its own
+    environment:
+      <<: *postgres-env
+      PYTHONUNBUFFERED: "1"
+      LB_ADMIN_URL: http://lb:8081
+      LB_URL: http://lb:8080
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+    command: python -m dashboard.app --host 0.0.0.0 --port 5050
+    ports:
+      - "127.0.0.1:5050:5050"
+    init: true
+    # So `docker compose up --wait` (and `make demo` right after it) returns only
+    # once the dashboard is actually answering, not just once its process started.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 5050), 2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    depends_on:
+      lb:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

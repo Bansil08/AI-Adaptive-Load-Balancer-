@@ -30,6 +30,7 @@ Run:  python -m lb.server                      (reads lb.toml)
 """
 
 import argparse
+import os
 import tomllib
 import logging
 import signal
@@ -282,7 +283,11 @@ def main() -> None:
     health = HealthChecker(router, cfg.health, db)
     heartbeat = (HeartbeatListener(router, cfg.heartbeat.host, cfg.heartbeat.port, db)
                  if cfg.heartbeat.port else None)
-    admin = AdminServer(router, cfg.admin, health, pool, db) if cfg.admin.port else None
+    # Any strategy can be switched to at runtime (POST /strategy), built from this config.
+    strategy_factories = {name: (lambda cls=cls: cls.from_config(cfg)) for name, cls in STRATEGIES.items()}
+    admin = (AdminServer(router, cfg.admin, health, pool, db, token=os.environ.get("ADMIN_TOKEN", ""),
+                         strategies=strategy_factories)
+             if cfg.admin.port else None)
 
     def on_signal(signum, frame):
         lb.shutdown()

@@ -35,6 +35,7 @@ def test_list_add_and_remove_via_dispatch():
     admin = AdminServer(router)
     status, payload = admin.dispatch("GET", "/backends", b"")
     assert status == 200 and [b["address"] for b in payload["backends"]] == ["127.0.0.1:9001"]
+    assert payload["strategy"] == "round_robin" and "fallbacks" not in payload
 
     assert admin.dispatch("POST", "/backends", b'{"address": "127.0.0.1:9002"}')[0] == 201
     assert router.backends == (A, B)

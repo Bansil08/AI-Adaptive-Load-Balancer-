@@ -1,0 +1,564 @@
+{
+ "batch": "comparison-20261022T212032Z",
+ "exported_at": "2026-10-22T23:07:53+00:00",
+ "cells": [
+  {
+   "scenario": "unequal_servers",
+   "strategy": "round_robin",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 86.77479623515507,
+    "sd": 1.5412318374461362,
+    "min": 85.05610953051001,
+    "max": 87.98798924963825
+   },
+   "p95_latency_ms": {
+    "mean": 170.0038617593964,
+    "sd": 2.2230515235814083,
+    "min": 167.4797667990788,
+    "max": 171.96059825000702
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 90.17111105919788,
+    "sd": 1.2593610054913853,
+    "min": 88.56625546146151,
+    "max": 91.79811379417556
+   }
+  },
+  {
+   "scenario": "unequal_servers",
+   "strategy": "least_connections",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 59.773207620636654,
+    "sd": 1.9607797381934413,
+    "min": 57.45736415491273,
+    "max": 61.319824531283686
+   },
+   "p95_latency_ms": {
+    "mean": 166.34252714909962,
+    "sd": 1.8986173012415328,
+    "min": 164.1493962961249,
+    "max": 167.8711018455942
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 90.34259945177615,
+    "sd": 1.2458812244006763,
+    "min": 88.74631045431538,
+    "max": 92.03419442715663
+   }
+  },
+  {
+   "scenario": "unequal_servers",
+   "strategy": "ml_latency",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 28.167574083789127,
+    "sd": 1.3709216830131339,
+    "min": 26.52770819230201,
+    "max": 29.69142780093955
+   },
+   "p95_latency_ms": {
+    "mean": 31.27875799946196,
+    "sd": 2.5815084363325917,
+    "min": 28.438399999868125,
+    "max": 33.535889698396204
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 90.55643585249011,
+    "sd": 1.27673125516271,
+    "min": 88.96594019025864,
+    "max": 92.14689106609592
+   }
+  },
+  {
+   "scenario": "unequal_servers",
+   "strategy": "bandit",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 33.77968256332882,
+    "sd": 1.6421294372596542,
+    "min": 31.612110224904704,
+    "max": 35.63290381919242
+   },
+   "p95_latency_ms": {
+    "mean": 70.38229243022214,
+    "sd": 2.017956978388881,
+    "min": 67.82452500337968,
+    "max": 72.68434355137288
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 90.53127783921613,
+    "sd": 1.289188330602893,
+    "min": 88.9000164496626,
+    "max": 92.09926397449117
+   }
+  },
+  {
+   "scenario": "sudden_slowdown",
+   "strategy": "round_robin",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 321.81048614238364,
+    "sd": 20.344875601323213,
+    "min": 294.91141728031363,
+    "max": 345.24896718981165
+   },
+   "p95_latency_ms": {
+    "mean": 2333.1298328703992,
+    "sd": 175.12799462538368,
+    "min": 2037.9216250032184,
+    "max": 2482.613876746472
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 81.74512710460013,
+    "sd": 1.1972452046349398,
+    "min": 80.53140726389678,
+    "max": 83.55181670566657
+   }
+  },
+  {
+   "scenario": "sudden_slowdown",
+   "strategy": "least_connections",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 49.26112069267609,
+    "sd": 1.2230614504152013,
+    "min": 48.24532843964385,
+    "max": 51.3852900630263
+   },
+   "p95_latency_ms": {
+    "mean": 43.59578054005393,
+    "sd": 2.4633952541546833,
+    "min": 40.00628134963335,
+    "max": 45.884058001683925
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 90.31772667281169,
+    "sd": 1.227679675837797,
+    "min": 88.89755360118403,
+    "max": 91.63647650861846
+   }
+  },
+  {
+   "scenario": "sudden_slowdown",
+   "strategy": "ml_latency",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 38.595559358533464,
+    "sd": 1.212485869172398,
+    "min": 37.21420216771619,
+    "max": 40.184219571602554
+   },
+   "p95_latency_ms": {
+    "mean": 41.866715999276494,
+    "sd": 2.102074543898953,
+    "min": 39.75852949479304,
+    "max": 44.526635304646334
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 90.50539634477121,
+    "sd": 1.2865113242042965,
+    "min": 88.90386030339864,
+    "max": 92.09650302790544
+   }
+  },
+  {
+   "scenario": "sudden_slowdown",
+   "strategy": "bandit",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 43.27665372150725,
+    "sd": 2.409944332438332,
+    "min": 40.54430291690801,
+    "max": 46.877575232957426
+   },
+   "p95_latency_ms": {
+    "mean": 41.46693170114304,
+    "sd": 1.6007537673679608,
+    "min": 39.73234190561925,
+    "max": 43.653746401832905
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 90.4316750790666,
+    "sd": 1.4056029570252009,
+    "min": 88.51493692044117,
+    "max": 92.1094144040822
+   }
+  },
+  {
+   "scenario": "traffic_spike",
+   "strategy": "round_robin",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 748.2086168138618,
+    "sd": 65.51149613063122,
+    "min": 650.340412984111,
+    "max": 816.3770262064187
+   },
+   "p95_latency_ms": {
+    "mean": 3839.836568411264,
+    "sd": 337.69140945079334,
+    "min": 3344.248566946043,
+    "max": 4104.502449999563
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 113.76398202827984,
+    "sd": 0.6325292591646319,
+    "min": 113.09209450671996,
+    "max": 114.73593390050966
+   }
+  },
+  {
+   "scenario": "traffic_spike",
+   "strategy": "least_connections",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 55.686691867460105,
+    "sd": 0.26153910596607166,
+    "min": 55.458087414317546,
+    "max": 56.09742445947752
+   },
+   "p95_latency_ms": {
+    "mean": 163.97874691014295,
+    "sd": 0.2807773437531696,
+    "min": 163.64624950074358,
+    "max": 164.30931660433998
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 129.98003714602578,
+    "sd": 1.1663474053392928,
+    "min": 128.6861469678115,
+    "max": 131.36544642799964
+   }
+  },
+  {
+   "scenario": "traffic_spike",
+   "strategy": "ml_latency",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 26.944825400897333,
+    "sd": 0.5920405385161491,
+    "min": 26.35247913814927,
+    "max": 27.89793125025857
+   },
+   "p95_latency_ms": {
+    "mean": 33.16002465930068,
+    "sd": 2.531837140113897,
+    "min": 30.30845180037431,
+    "max": 37.25170860270736
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 130.3517039874999,
+    "sd": 1.2200290059198755,
+    "min": 129.03328872471377,
+    "max": 131.7230185991638
+   }
+  },
+  {
+   "scenario": "traffic_spike",
+   "strategy": "bandit",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 31.994823619083284,
+    "sd": 0.5931977383677157,
+    "min": 31.448800462651693,
+    "max": 32.798426047327055
+   },
+   "p95_latency_ms": {
+    "mean": 67.96119981925585,
+    "sd": 0.957455684164283,
+    "min": 66.89656039743568,
+    "max": 69.16450049902778
+   },
+   "error_rate": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "throughput_rps": {
+    "mean": 130.29793227966024,
+    "sd": 1.2919484585568182,
+    "min": 128.78379632110168,
+    "max": 131.7704078212577
+   }
+  },
+  {
+   "scenario": "server_crash",
+   "strategy": "round_robin",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 36.033075797577354,
+    "sd": 0.11368551344838049,
+    "min": 35.906046697635766,
+    "max": 36.20864039845398
+   },
+   "p95_latency_ms": {
+    "mean": 38.90094032984052,
+    "sd": 0.15684014318951256,
+    "min": 38.70814999936556,
+    "max": 39.11552270183165
+   },
+   "error_rate": {
+    "mean": 0.0019123822122737097,
+    "sd": 0.0001758181428702882,
+    "min": 0.0018063583815028901,
+    "max": 0.002223869532987398
+   },
+   "throughput_rps": {
+    "mean": 90.34342846931598,
+    "sd": 1.2497566476033375,
+    "min": 88.78943525526297,
+    "max": 91.88485773127938
+   }
+  },
+  {
+   "scenario": "server_crash",
+   "strategy": "least_connections",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 36.0032755270458,
+    "sd": 0.10166323068860905,
+    "min": 35.87989027182778,
+    "max": 36.103365092209245
+   },
+   "p95_latency_ms": {
+    "mean": 38.807903050401364,
+    "sd": 0.10558247338716929,
+    "min": 38.643199602665845,
+    "max": 38.93338575071539
+   },
+   "error_rate": {
+    "mean": 0.0018382532278407963,
+    "sd": 2.5728469776599157e-05,
+    "min": 0.0018063583815028901,
+    "max": 0.0018705574261129816
+   },
+   "throughput_rps": {
+    "mean": 90.36069307548829,
+    "sd": 1.2705378475455595,
+    "min": 88.79698851736454,
+    "max": 91.94029969942211
+   }
+  },
+  {
+   "scenario": "server_crash",
+   "strategy": "ml_latency",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 36.583741884986296,
+    "sd": 0.15952647764135375,
+    "min": 36.408014186895876,
+    "max": 36.76901962545741
+   },
+   "p95_latency_ms": {
+    "mean": 39.61920148009085,
+    "sd": 0.34544183338184764,
+    "min": 39.27146640198771,
+    "max": 40.07504200271796
+   },
+   "error_rate": {
+    "mean": 0.0018382532278407963,
+    "sd": 2.5728469776599157e-05,
+    "min": 0.0018063583815028901,
+    "max": 0.0018705574261129816
+   },
+   "throughput_rps": {
+    "mean": 90.33481427932435,
+    "sd": 1.2764293936787203,
+    "min": 88.73584284150527,
+    "max": 91.92439682474568
+   }
+  },
+  {
+   "scenario": "server_crash",
+   "strategy": "bandit",
+   "runs": 5,
+   "avg_latency_ms": {
+    "mean": 35.96394171906966,
+    "sd": 0.1101023993520222,
+    "min": 35.827171472393346,
+    "max": 36.094497965192986
+   },
+   "p95_latency_ms": {
+    "mean": 38.889235811293474,
+    "sd": 0.15748487713887735,
+    "min": 38.72647280077217,
+    "max": 39.092499901744304
+   },
+   "error_rate": {
+    "mean": 0.000960232341656749,
+    "sd": 0.0005728395550703697,
+    "min": 0.00036832412523020257,
+    "max": 0.0018705574261129816
+   },
+   "throughput_rps": {
+    "mean": 90.42852404943979,
+    "sd": 1.3213469794215114,
+    "min": 88.73925171590548,
+    "max": 92.0417832426653
+   }
+  }
+ ],
+ "headline": {
+  "scenario": "unequal_servers",
+  "label": "unequal servers",
+  "clear_winner": true,
+  "winners": [
+   "ml_latency"
+  ],
+  "p95_ms": 31.27875799946196,
+  "round_robin_p95_ms": 170.0038617593964,
+  "change_vs_round_robin": -0.8160114854112535,
+  "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer.",
+  "strategy": "ml_latency",
+  "baseline": "least_connections",
+  "baseline_p95_ms": 166.34252714909962,
+  "change_vs_baseline": -0.8119617482339587,
+  "text": "ML latency: p95 31 ms vs 170 ms for round robin (\u221282%) and 166 ms for least connections (\u221281%) on unequal servers"
+ },
+ "cards": [
+  {
+   "scenario": "unequal_servers",
+   "label": "unequal servers",
+   "clear_winner": true,
+   "winners": [
+    "ml_latency"
+   ],
+   "p95_ms": 31.27875799946196,
+   "round_robin_p95_ms": 170.0038617593964,
+   "change_vs_round_robin": -0.8160114854112535,
+   "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer."
+  },
+  {
+   "scenario": "sudden_slowdown",
+   "label": "sudden slowdown",
+   "clear_winner": false,
+   "winners": [
+    "bandit",
+    "ml_latency",
+    "least_connections"
+   ],
+   "p95_ms": 41.46693170114304,
+   "round_robin_p95_ms": 2333.1298328703992,
+   "change_vs_round_robin": -0.9822269077712974,
+   "note": "One of three equal backends becomes 10\u00d7 slower halfway. Round robin keeps feeding it and its queue grows; every adaptive strategy steers away within about a second, so they end up within noise of each other."
+  },
+  {
+   "scenario": "traffic_spike",
+   "label": "traffic spike",
+   "clear_winner": true,
+   "winners": [
+    "ml_latency"
+   ],
+   "p95_ms": 33.16002465930068,
+   "round_robin_p95_ms": 3839.836568411264,
+   "change_vs_round_robin": -0.9913642093697179,
+   "note": "Load jumps from 30 to 180 req/s. Round robin's third overloads the slow backend and a backlog builds; the others never overload any backend."
+  },
+  {
+   "scenario": "server_crash",
+   "label": "server crash",
+   "clear_winner": false,
+   "winners": [
+    "least_connections",
+    "bandit",
+    "round_robin"
+   ],
+   "p95_ms": 38.807903050401364,
+   "round_robin_p95_ms": 38.90094032984052,
+   "change_vs_round_robin": -0.002391646028355535,
+   "note": "The backends are identical, so after b dies every strategy is choosing between two equal servers and routing can't help. The ~0.2% errors are requests in flight on b when it died or sent before the circuit breaker and health checks removed it (retries were off in these runs)."
+  }
+ ],
+ "methodology": {
+  "runs": 80,
+  "repeats": 5,
+  "seeds": [
+   2000,
+   2004
+  ],
+  "duration_s": 30.0,
+  "requests": 241560,
+  "cross_checked": 80,
+  "strategies": 4,
+  "scenarios": 4,
+  "scenario_descriptions": {
+   "unequal_servers": "Three backends of different speeds (20 / 60 / 150 ms), steady 90 req/s. Round robin gives the slow one a third of the traffic (30 req/s, ~59% of its 51 req/s capacity).",
+   "sudden_slowdown": "Three equal 30 ms backends at 90 req/s; at t = 15 s backend b becomes ten times slower (300 ms). Its capacity drops to ~25 req/s, below the 30 req/s round robin keeps sending it.",
+   "traffic_spike": "Unequal backends (20 / 60 / 150 ms); the rate jumps from 30 to 180 req/s at t = 10 s. A third of 180 (60 req/s) exceeds the slow backend's ~51 req/s capacity.",
+   "server_crash": "Three equal 30 ms backends at 90 req/s; backend b is killed (SIGKILL) at t = 15 s and not restarted."
+  }
+ },
+ "links": {
+  "repo": "https://github.com/Bansil08/AI-Adaptive-Load-Balancer-",
+  "video": null
+ }
+}

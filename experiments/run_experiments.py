@@ -2,7 +2,7 @@
 
 One command, fixed seed:
 
-    python -m experiments.run_experiments            # all 4 strategies x 4 scenarios, 3 repeats (~28 min)
+    python -m experiments.run_experiments            # all 4 strategies x 4 scenarios, 5 repeats (~42 min)
     python -m experiments.run_experiments --scenarios traffic_spike --repeats 1 --duration 10
 
 For each (strategy, scenario, repeat):
@@ -19,7 +19,10 @@ For each (strategy, scenario, repeat):
 Fairness and repeatability: repeat i uses seed + i for the arrival times and
 the backends' jitter, and every strategy gets the SAME seeds, so both see an
 identical sequence of requests. OS scheduling still makes runs differ
-slightly, which is why each cell is repeated and reported as mean and range.
+slightly, which is why each cell is repeated and reported as mean, standard
+deviation and range. The default seed (2000) is not one the latency model's
+training data came from (the Phase 5 baselines, seeds 42-44), so the final
+comparison runs on traffic the model never saw.
 
 Settings held constant for every run (see LB_CONFIG): retries off, so the
 error rate shows what the routing strategy did rather than what retries hid;
@@ -45,6 +48,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -189,7 +193,10 @@ def set_delay(port: int, delay_ms: float) -> None:
     import http.client
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
-        conn.request("POST", "/control", body=json.dumps({"delay_ms": delay_ms, "jitter_ms": delay_ms * 0.1}))
+        # The backends inherited ADMIN_TOKEN from this process's environment (.env),
+        # and with it set their control endpoints require it.
+        conn.request("POST", "/control", body=json.dumps({"delay_ms": delay_ms, "jitter_ms": delay_ms * 0.1}),
+                     headers={"X-Admin-Token": os.environ.get("ADMIN_TOKEN", "")})
         response = conn.getresponse()
         response.read()
         if response.status != 200:
@@ -262,7 +269,7 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
     return {"run_id": run_id, "strategy": strategy, "scenario": scenario.name, "repeat": repeat,
             "avg_latency_ms": avg, "p95_latency_ms": p95, "error_rate": error_rate,
             "throughput_rps": throughput, "share": share, "logged_rows": logged,
-            "client_answered": answered, "client": client, "fallbacks": fallbacks}
+            "client_answered": answered, "client": client, "fallbacks": fallbacks, "duration": duration}
 
 
 def recompute_batch(conn: psycopg.Connection, batch: str) -> list[dict]:
@@ -284,7 +291,7 @@ def recompute_batch(conn: psycopg.Connection, batch: str) -> list[dict]:
                      "avg_latency_ms": avg, "p95_latency_ms": p95, "error_rate": error_rate,
                      "throughput_rps": throughput, "share": notes["share"], "logged_rows": notes["logged_rows"],
                      "client_answered": notes["client_answered"], "client": notes["client"],
-                     "fallbacks": notes.get("fallbacks", 0),
+                     "fallbacks": notes.get("fallbacks", 0), "duration": notes["duration"],
                      "base_seed": notes["seed"] - notes["repeat"]})  # repeat i ran with seed + i
     return runs
 
@@ -292,7 +299,8 @@ def recompute_batch(conn: psycopg.Connection, batch: str) -> list[dict]:
 def aggregate(runs: list[dict]) -> dict:
     def stats(key):
         values = [r[key] for r in runs]
-        return {"mean": statistics.fmean(values), "min": min(values), "max": max(values)}
+        return {"mean": statistics.fmean(values), "min": min(values), "max": max(values),
+                "sd": statistics.stdev(values) if len(values) > 1 else 0.0}  # sample SD (n - 1)
     shares = {}
     for r in runs:
         for name, n in r["share"].items():
@@ -316,8 +324,8 @@ def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Pa
         "`python -m experiments.run_experiments`. Real measured numbers; nothing estimated.", "",
         "Latency is the load balancer's `response_time_ms` over successful requests; error rate is 5xx over "
         "all requests; throughput is successful requests divided by the time taken to serve them (load start "
-        "to last response, at least the planned duration). Each cell is the mean over the repeats, p95 with "
-        "its min–max range. Retries off, health checks every 1 s, circuit breaker on, capacity 8 requests at "
+        "to last response, at least the planned duration). Each cell is the mean ± sample standard deviation "
+        "over the repeats; p95 also shows its min–max range. Retries off, health checks every 1 s, circuit breaker on, capacity 8 requests at "
         "a time per backend."
         + (" Fallbacks: share of an ML strategy's requests routed by least connections instead (no fresh "
            "heartbeat or latency history yet, an error, or over the 2 ms decision budget)." if ml else ""), "",
@@ -334,9 +342,10 @@ def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Pa
                 continue
             a = aggregate(cell)
             share = ", ".join(f"{k} {v:.0%}" for k, v in a["share"].items())
-            lines.append(f"| {strategy} | {a['avg_latency_ms']['mean']:.1f} | {a['p95_latency_ms']['mean']:.1f} "
-                         f"[{a['p95_latency_ms']['min']:.0f}–{a['p95_latency_ms']['max']:.0f}] | "
-                         f"{a['error_rate']['mean']:.2%} | {a['throughput_rps']['mean']:.1f} | {share} |"
+            avg, p95, tput = a["avg_latency_ms"], a["p95_latency_ms"], a["throughput_rps"]
+            lines.append(f"| {strategy} | {avg['mean']:.1f} ± {avg['sd']:.1f} | {p95['mean']:.1f} ± {p95['sd']:.1f} "
+                         f"[{p95['min']:.0f}–{p95['max']:.0f}] | "
+                         f"{a['error_rate']['mean']:.2%} | {tput['mean']:.1f} ± {tput['sd']:.1f} | {share} |"
                          + ((f" {a['fallback_rate']:.2%} |" if strategy not in BASELINES else " – |") if ml else ""))
         lines.append("")
     mismatches = [r for r in runs if r["logged_rows"] != r["client_answered"]]
@@ -355,8 +364,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--strategies", nargs="+", default=list(STRATEGIES), choices=STRATEGIES)
     parser.add_argument("--scenarios", nargs="+", default=list(SCENARIOS), choices=list(SCENARIOS))
-    parser.add_argument("--repeats", type=int, default=3)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=2000)
     parser.add_argument("--duration", type=float,
                         help="run every scenario for this many seconds (events and rate steps scale with it)")
     parser.add_argument("--no-plots", action="store_true")
@@ -390,16 +399,25 @@ def main() -> None:
     save(batch, args.seed, args.repeats, runs, plots=not args.no_plots)
 
 
+def is_full_batch(runs: list[dict], repeats: int) -> bool:
+    """Every scenario, at full length, at least 3 repeats: a batch the committed reports may come from."""
+    return ({r["scenario"] for r in runs} == set(SCENARIOS) and repeats >= 3
+            and all(r["duration"] == SCENARIOS[r["scenario"]].duration for r in runs))
+
+
 def save(batch: str, seed: int, repeats: int, runs: list[dict], plots: bool) -> None:
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    # A quick look (one scenario, --duration 12, one repeat) goes to results/partial/,
+    # so it can never overwrite the committed reports and charts of a full batch.
+    out_dir = RESULTS_DIR if is_full_batch(runs, repeats) else RESULTS_DIR / "partial"
+    out_dir.mkdir(parents=True, exist_ok=True)
     prefix = batch_prefix({r["strategy"] for r in runs})
-    (RESULTS_DIR / f"{prefix}_results.json").write_text(json.dumps(
+    (out_dir / f"{prefix}_results.json").write_text(json.dumps(
         {"batch": batch, "seed": seed, "repeats": repeats, "runs": runs}, indent=2, default=str) + "\n")
-    write_report(batch, seed, repeats, runs, RESULTS_DIR / f"{prefix}_results.md")
-    print(f"saved {RESULTS_DIR / f'{prefix}_results.md'}")
+    write_report(batch, seed, repeats, runs, out_dir / f"{prefix}_results.md")
+    print(f"saved {out_dir / f'{prefix}_results.md'}")
     if plots:
         from experiments.plot_results import plot_batch
-        for path in plot_batch(batch):
+        for path in plot_batch(batch, out_dir):
             print(f"saved {path}")
 
 

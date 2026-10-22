@@ -20,8 +20,9 @@ def add_request(db, server_id, ago, ms=10.0, status=200, retried=False):
 
 def test_latency_per_minute_avg_and_p95(db):
     a = add_server(db, 9001)
-    for ms in range(1, 21):                 # 1..20 ms, all in the same minute
-        add_request(db, a, "2 minutes", ms=float(ms))
+    with db.transaction():                  # one now() for all rows, so they can't straddle a minute
+        for ms in range(1, 21):             # 1..20 ms, all in the same minute
+            add_request(db, a, "2 minutes", ms=float(ms))
     add_request(db, a, "20 minutes", ms=999.0)   # outside the 15-minute window
     rows = db.execute("SELECT server, requests, avg_latency_ms, p95_latency_ms "
                       "FROM dashboard_latency_per_minute").fetchall()
@@ -39,7 +40,8 @@ def test_latency_per_minute_groups_by_minute_and_server(db):
 
 
 def test_error_rate_per_server_including_unrouted_requests(db):
-    a, b = add_server(db, 9001), add_server(db, 9002)
+    a = add_server(db, 9001)
+    add_server(db, 9002)                    # idle: must still be listed
     for status in (200,) * 8 + (502, 504):
         add_request(db, a, "1 minute", status=status)
     add_request(db, a, "1 hour", status=502)     # too old: not counted

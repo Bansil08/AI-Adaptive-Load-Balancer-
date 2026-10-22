@@ -174,3 +174,22 @@ def test_a_broken_observe_does_not_fail_the_request():
         lb.shutdown()
         good.shutdown()
         good.server_close()
+
+
+@pytest.mark.db
+def test_latest_baseline_batch_ignores_a_newer_quick_run(db):
+    # Regression: `make train` (--batch latest) picked a newer 6-second, one-scenario
+    # check run and would have trained the model on a few seconds of traffic.
+    from experiments.scenarios import SCENARIOS
+    from ml.export_data import latest_baseline_batch
+
+    def add_run(batch, scenario, duration, strategy="round_robin"):
+        run_id = db.execute("INSERT INTO experiment_runs (strategy, scenario, notes) VALUES (%s, %s, %s) RETURNING id",
+                            (strategy, scenario, json.dumps({"batch": batch, "duration": duration}))).fetchone()[0]
+        db.execute("INSERT INTO run_results VALUES (%s, 1, 1, 0, 1)", (run_id,))
+
+    for _ in range(3):
+        for scenario in SCENARIOS:
+            add_run("baseline-full", scenario, 30.0)
+    add_run("baseline-quick", "sudden_slowdown", 6.0)          # newer, but not a full batch
+    assert latest_baseline_batch(db) == "baseline-full"

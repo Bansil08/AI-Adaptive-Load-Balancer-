@@ -9,7 +9,10 @@ venv/
 .pytest_cache/
 
 # ML artefacts and experiment outputs (regenerated, not source)
-ml/models/
+ml/models/*
+# ...except the trained model the final results used, so the ML strategy works
+# out of the box (1 KB; `make train` rebuilds it)
+!ml/models/latency_model.joblib
 ml/data/
 experiments/results/*
 # ...except the measured benchmark reports that the docs cite
@@ -35,6 +38,8 @@ experiments/results/*
 !experiments/results/comparison_bars.png
 !experiments/results/comparison_timeline_sudden_slowdown.png
 !experiments/results/comparison_timeline_server_crash.png
+!experiments/results/overhead_benchmark.md
+!experiments/results/overhead_benchmark.json
 
 # OS / editor
 .DS_Store

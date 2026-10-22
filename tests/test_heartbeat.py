@@ -71,7 +71,7 @@ def test_heartbeats_for_unknown_backends_are_ignored(listener):
 
 def test_real_agent_to_listener_over_udp(listener):
     host, port = listener.start()
-    agent = HeartbeatAgent((host, port), "127.0.0.1:9001", active_connections=lambda: 7, interval=0.05)
+    agent = HeartbeatAgent([((host, port), "127.0.0.1:9001")], active_connections=lambda: 7, interval=0.05)
     agent.start()
     try:
         deadline = time.monotonic() + 3
