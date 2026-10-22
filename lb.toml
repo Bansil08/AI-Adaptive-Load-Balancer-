@@ -1,6 +1,7 @@
 # Load balancer configuration, read by `python -m lb.server` (override with --config).
 
-# Routing strategy: "round_robin" or "least_connections".
+# Routing strategy: "round_robin", "least_connections", "ml_latency" or "bandit".
+# The two ML ones fall back to least connections whenever they cannot decide.
 strategy = "round_robin"
 
 # Send each client IP to the same backend (rendezvous hashing) instead of
@@ -71,3 +72,14 @@ batch_size = 200          # N: write a batch when it has this many records...
 flush_interval_ms = 200   # T: ...or this long after its first record, whichever comes first
 queue_size = 10000        # records waiting to be written; when full, new ones are dropped (counted)
 shutdown_timeout = 5.0    # max seconds to flush the rest on shutdown
+
+[ml_latency]  # supervised model from `python -m ml.train` (lb/strategies/ml_latency.py)
+model_path = "ml/models/latency_model.joblib"  # relative to the repo root
+time_budget_ms = 2.0      # a slower decision is discarded; least connections decides instead
+
+[bandit]  # epsilon-greedy over healthy backends, reward = -latency (lb/strategies/bandit.py)
+epsilon = 0.1             # share of requests sent to a random backend (exploration)
+window = 50               # latest rewards remembered per backend (older ones are forgotten)
+failure_penalty_ms = 1000.0  # latency recorded for a failed request (refused, 5xx, timeout)
+seed = 42
+time_budget_ms = 2.0

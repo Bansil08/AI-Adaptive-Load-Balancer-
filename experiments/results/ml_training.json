@@ -1,0 +1,116 @@
+{
+  "rows": 72066,
+  "train_rows": 47303,
+  "test_rows": 24763,
+  "runs": 24,
+  "scenarios": [
+    "server_crash",
+    "sudden_slowdown",
+    "traffic_spike",
+    "unequal_servers"
+  ],
+  "seed": 42,
+  "budget_ms": 2.0,
+  "results": {
+    "baseline_recent_avg": {
+      "train_mae_ms": 15.49667591552338,
+      "test_mae_ms": 60.68982997613824,
+      "test_mae_by_scenario": {
+        "server_crash": 1.8005689862889427,
+        "sudden_slowdown": 85.81342933715706,
+        "traffic_spike": 107.43506051403948,
+        "unequal_servers": 3.6260820868561825
+      }
+    },
+    "linear_regression": {
+      "train_mae_ms": 9.671418051490276,
+      "test_mae_ms": 22.64455566985971,
+      "test_mae_by_scenario": {
+        "server_crash": 3.303514401927705,
+        "sudden_slowdown": 44.133421370432615,
+        "traffic_spike": 29.781613763340008,
+        "unequal_servers": 6.623314803922919
+      },
+      "fit_s": 0.017749665999872377,
+      "inference": {
+        "median_us": 27.12499917834066,
+        "p99_us": 33.958000130951405
+      },
+      "coefficients": {
+        "active_connections": 3.089559316496638,
+        "cpu_percent": -3.2085469364748347,
+        "memory_percent": -11.951791211597893,
+        "recent_avg_latency_ms": 1.0428406187303454
+      },
+      "intercept": -0.8196408584106365
+    },
+    "decision_tree": {
+      "train_mae_ms": 5.585951297403074,
+      "test_mae_ms": 77.72397092020921,
+      "test_mae_by_scenario": {
+        "server_crash": 2.1460573456382246,
+        "sudden_slowdown": 129.1085695563349,
+        "traffic_spike": 128.28431689993275,
+        "unequal_servers": 3.6676231974050695
+      },
+      "fit_s": 0.041723457998159574,
+      "inference": {
+        "median_us": 31.457999284612015,
+        "p99_us": 36.95800114655867
+      },
+      "importances": {
+        "active_connections": 0.06558970187442278,
+        "cpu_percent": 0.00030677196475432277,
+        "memory_percent": 0.00036190276104605104,
+        "recent_avg_latency_ms": 0.9337416233997768
+      }
+    },
+    "deep_tree": {
+      "train_mae_ms": 0.0,
+      "test_mae_ms": 82.44327146490912,
+      "test_mae_by_scenario": {
+        "server_crash": 2.874172561806432,
+        "sudden_slowdown": 139.56295296469077,
+        "traffic_spike": 133.65386080360457,
+        "unequal_servers": 5.3778475880054994
+      },
+      "fit_s": 0.1135948749979434,
+      "inference": {
+        "median_us": 31.749998015584424,
+        "p99_us": 39.08299913746305
+      },
+      "importances": {
+        "active_connections": 0.06906313392487969,
+        "cpu_percent": 0.0012516537811641014,
+        "memory_percent": 0.0005040826769005745,
+        "recent_avg_latency_ms": 0.9291811296170557
+      }
+    },
+    "random_forest": {
+      "train_mae_ms": 4.9375722203651495,
+      "test_mae_ms": 80.47606300017,
+      "test_mae_by_scenario": {
+        "server_crash": 2.878077188318997,
+        "sudden_slowdown": 141.634518547938,
+        "traffic_spike": 128.48883140335937,
+        "unequal_servers": 3.6127926036538627
+      },
+      "fit_s": 0.9230491249982151,
+      "inference": {
+        "median_us": 691.2919998285361,
+        "p99_us": 754.4580003013834
+      },
+      "importances": {
+        "active_connections": 0.05853350513317354,
+        "cpu_percent": 0.000642795837223305,
+        "memory_percent": 0.0005970205471816839,
+        "recent_avg_latency_ms": 0.9402266784824214
+      }
+    }
+  },
+  "random_split_mae_ms": {
+    "random_forest": 6.427518721853749,
+    "baseline_recent_avg": 31.938078395764514
+  },
+  "best": "linear_regression"
+}

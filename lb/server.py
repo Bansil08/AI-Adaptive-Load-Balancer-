@@ -268,7 +268,7 @@ def main() -> None:
         level=logging.WARNING if args.quiet else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(threadName)s: %(message)s",
     )
-    router = Router(cfg.backends, STRATEGIES[cfg.strategy](), cfg.breaker, cfg.sticky_sessions)
+    router = Router(cfg.backends, STRATEGIES[cfg.strategy].from_config(cfg), cfg.breaker, cfg.sticky_sessions)
     pool = ConnectionPool(cfg.pool, cfg.proxy.backend_connect_timeout)
     db = DBWriter(config.database_url(), cfg.database) if cfg.database.enabled else None
     if args.run_id is not None:

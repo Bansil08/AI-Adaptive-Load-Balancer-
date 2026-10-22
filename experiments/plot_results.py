@@ -3,12 +3,15 @@
     python -m experiments.plot_results                 # the latest batch of runs
     python -m experiments.plot_results --batch baseline-20261022T030000Z
 
-Writes PNGs to experiments/results/:
-  - baseline_bars.png: per scenario (columns), p95 latency, average latency and
+Writes PNGs to experiments/results/, named <prefix>_... where the prefix is
+"baseline" for a round robin / least connections batch (Phase 5; the
+timelines keep their Phase 5 names) and "comparison" once an ML strategy is
+in the batch (Phase 6):
+  - <prefix>_bars.png: per scenario (columns), p95 latency, average latency and
     error rate (rows) for each strategy; p95 bars show the min-max range over
     the repeats. Each panel has its own scale: the scenarios differ by orders
     of magnitude, and a panel compares strategies within one scenario.
-  - timeline_sudden_slowdown.png, timeline_server_crash.png: p95 latency per
+  - [comparison_]timeline_sudden_slowdown.png, ..._server_crash.png: p95 latency per
     second (top) and the affected backend's share of requests or the errors
     per second (bottom), pooled over the repeats, with the event marked.
     Two stacked charts on a shared time axis, never one chart with two y-axes.
@@ -27,6 +30,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import psycopg  # noqa: E402
 
 from experiments.benchmark_concurrency import RESULTS_DIR  # noqa: E402
+from experiments.run_experiments import batch_prefix  # noqa: E402
 from experiments.scenarios import SCENARIOS  # noqa: E402
 from lb.config import database_url  # noqa: E402
 
@@ -42,6 +46,9 @@ STRATEGY_COLORS = {
 }
 LABELS = {"round_robin": "Round robin", "least_connections": "Least connections",
           "ml_latency": "ML latency", "bandit": "Bandit"}
+# Bar-chart ticks: four full names don't fit side by side under a ~3 inch panel.
+TICK_LABELS = {"round_robin": "Round\nrobin", "least_connections": "Least\nconn.",
+               "ml_latency": "ML\nlatency", "bandit": "Bandit"}
 SURFACE, INK, INK_2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 
 BARS_SQL = """
@@ -125,15 +132,16 @@ def plot_bars(rows, strategies, scenarios, path: Path) -> Path:
                 ax.annotate(fmt(value, unit), (bar.get_x() + bar.get_width() / 2, anchor),
                             xytext=(0, 3), textcoords="offset points", ha="center", va="bottom",
                             fontsize=9, color=INK)
-            ax.set_xticks(list(x), [LABELS[s] for s in present], fontsize=9, color=INK_2)
+            ax.set_xticks(list(x), [TICK_LABELS[s] for s in present], fontsize=9, color=INK_2)
             if unit == "%":
                 ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0, decimals=2))
             if col == 0:
                 ax.set_ylabel(title, color=INK_2, fontsize=10)
             if row == 0:
                 ax.set_title(scenario.replace("_", " "), color=INK, fontsize=11, pad=10)
-    fig.suptitle("Round robin vs least connections, per scenario (mean of repeats; p95 bars show min–max)",
-                 color=INK, fontsize=12)
+    names = " vs ".join(LABELS[s] if i == 0 or s == "ml_latency" else LABELS[s].lower()
+                        for i, s in enumerate(strategies))
+    fig.suptitle(f"{names}, per scenario (mean of repeats; p95 bars show min–max)", color=INK, fontsize=12)
     fig.tight_layout()
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
@@ -181,20 +189,25 @@ def plot_timeline(rows, scenario_name: str, lower: str, path: Path, duration: fl
         backend = scenario.events[0].backend
         bottom.set_ylabel(f"Share of requests sent to {backend}", color=INK_2, fontsize=10)
         bottom.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0, decimals=0))
-        bottom.set_ylim(0, 0.6)
+        # Up to 60%, or higher when a strategy concentrated traffic there (the bandit can).
+        top_share = max([p[3] for points in by_strategy.values() for p in points] or [0])
+        bottom.set_ylim(0, 0.6 if top_share <= 0.55 else 1.0)
     bottom.set_xlabel("Seconds since the load started", color=INK_2, fontsize=10)
     # Direct labels at the line ends, in ink (the line's colour carries identity).
-    # Placed after the axis limits are final, and pushed apart when two lines end
-    # within ~12 px of each other on screen.
-    ends.sort()
+    # Placed after the axis limits are final. Lines that end close together
+    # (all four do in the crash scenario) get their labels stacked: each label
+    # is pushed up until it is at least 11 points above the one below it.
+    to_points = 72 / fig.dpi  # display pixels -> points
     to_px = top.transData.transform
-    for i, (value, second, label) in enumerate(ends):
-        y = to_px((second, value))[1]
-        close = any(abs(y - to_px((s2, v2))[1]) < 12 for j, (v2, s2, _) in enumerate(ends) if j != i)
-        nudge = (-6 if i == 0 else 6) if close else 0
-        top.annotate(label, (second, value), xytext=(4, nudge), textcoords="offset points",
+    placed = sorted((to_px((second, value))[1] * to_points, value, second, label)
+                    for value, second, label in ends)
+    previous = None
+    for y, value, second, label in placed:
+        target = y if previous is None else max(y, previous + 11)
+        top.annotate(label, (second, value), xytext=(4, target - y), textcoords="offset points",
                      va="center", fontsize=9, color=INK)
-    top.legend(frameon=False, fontsize=9, labelcolor=INK, loc="upper left")
+        previous = target
+    top.legend(frameon=False, fontsize=9, labelcolor=INK, loc="best")  # the emptiest corner, off the lines
     fig.suptitle(f"{scenario_name.replace('_', ' ')}: latency over time (pooled over repeats)", color=INK, fontsize=12)
     fig.tight_layout()
     fig.savefig(path, dpi=150, facecolor=SURFACE)
@@ -209,7 +222,9 @@ def plot_batch(batch: str | None = None, out_dir: Path = RESULTS_DIR) -> list[Pa
         rows = conn.execute(BARS_SQL, (batch,)).fetchall()
         scenarios = [s for s in SCENARIOS if any(r[0] == s for r in rows)]
         strategies = [s for s in STRATEGY_COLORS if any(r[1] == s for r in rows)]
-        paths = [plot_bars(rows, strategies, scenarios, out_dir / "baseline_bars.png")]
+        prefix = batch_prefix(strategies)
+        paths = [plot_bars(rows, strategies, scenarios, out_dir / f"{prefix}_bars.png")]
+        timeline_prefix = "" if prefix == "baseline" else f"{prefix}_"
         for scenario, lower in (("sudden_slowdown", "share"), ("server_crash", "errors")):
             if scenario in scenarios:
                 timeline = conn.execute(TIMELINE_SQL, {"batch": batch, "scenario": scenario,
@@ -217,7 +232,8 @@ def plot_batch(batch: str | None = None, out_dir: Path = RESULTS_DIR) -> list[Pa
                 duration = conn.execute("SELECT (notes::jsonb ->> 'duration')::float8 FROM experiment_runs"
                                         " WHERE notes::jsonb ->> 'batch' = %s AND scenario = %s LIMIT 1",
                                         (batch, scenario)).fetchone()[0]
-                paths.append(plot_timeline(timeline, scenario, lower, out_dir / f"timeline_{scenario}.png", duration))
+                paths.append(plot_timeline(timeline, scenario, lower,
+                                           out_dir / f"{timeline_prefix}timeline_{scenario}.png", duration))
     return paths
 
 
