@@ -173,8 +173,7 @@ class AdminServer:
         # Starts down; the health checker brings it up after M passed checks.
         if not self.router.add_backend(backend, healthy=self.health is None):
             return 409, {"error": f"{backend} is already a backend"}
-        if self.db:
-            self.db.log_status(backend, "up" if self.router.is_healthy(backend) else "down")
+        # (Its servers.status row is written by the health checker on first sight.)
         log.warning("admin: added backend %s", backend)
         return 201, {"added": str(backend), "healthy": self.router.is_healthy(backend)}
 

@@ -293,7 +293,9 @@ def test_health_checker_logs_tcp_and_http_rows_and_status_changes():
     # Live: TCP and HTTP rows. Dead: only a TCP row (HTTP is never attempted).
     assert kinds == [(as_backend(live), "tcp", True), (as_backend(live), "http", True), (dead, "tcp", False)]
     assert all(ms is not None and ms >= 0 for *_, ms in fake.checks)  # refused fast: a real time
-    assert fake.statuses == [(dead, "down")]
+    # Each backend's starting status is written on first sight (so a stale
+    # 'down'/'removed' row from an earlier run is corrected), then the transition.
+    assert fake.statuses == [(as_backend(live), "up"), (dead, "up"), (dead, "down")]
 
 
 def test_heartbeat_listener_logs_each_accepted_heartbeat():
@@ -307,3 +309,65 @@ def test_heartbeat_listener_logs_each_accepted_heartbeat():
     listener.handle(datagram(seq=1), 1.0)
     listener.handle(datagram(seq=1), 2.0)    # duplicate: dropped, not logged
     assert fake.metrics == [(A, 12.5, 3.0, 4)]
+
+
+
+# --- regressions from the Phase 4 review ------------------------------------------------
+
+
+@pytest.mark.db
+def test_missing_schema_is_one_clear_error_not_a_traceback_per_batch(db_url, caplog):
+    """Regression: with the tables missing (init_db.py never run), every batch
+    raised UndefinedTable into the "unexpected error" handler: a full traceback
+    every 200 ms."""
+    import logging
+    writer = DBWriter(db_url, DatabaseSettings(batch_size=1, flush_interval_ms=10),
+                      connect=lambda u: psycopg.connect(u, autocommit=True, options="-c search_path=no_such_schema"))
+    with caplog.at_level(logging.WARNING, logger="lb.db_writer"):
+        writer.start()
+        for i in range(10):
+            writer.submit(request_record(i))
+            time.sleep(0.02)
+        writer.stop()
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert len(errors) == 1 and "init_db.py" in errors[0].getMessage()
+    assert not any(r.exc_info for r in caplog.records)
+    assert writer.counters().rejected == 10
+
+
+def test_stop_before_start_does_not_crash():
+    """Regression: stop() joined a thread that was never started (RuntimeError)."""
+    assert DBWriter("unused", DatabaseSettings()).stop() is True
+
+
+def test_logged_latency_excludes_a_slow_client_upload():
+    """Regression: the timer started before the request was read, so a client
+    taking 1.5 s to send it made a 10 ms backend log 1516 ms."""
+    import socket
+    from lb.proxy import Proxy
+    from lb.router import Router
+    from lb.server import LoadBalancer
+    from lb.strategies.round_robin import RoundRobinStrategy
+    from tests.test_proxy import as_backend, start_backend
+
+    backend = start_backend("b", delay_ms=10)
+    fake = FakeDB()
+    router = Router([as_backend(backend)], RoundRobinStrategy())
+    lb = LoadBalancer(router, "127.0.0.1", 0, proxy=Proxy(router, db=fake))
+    _, port = lb.start()
+    threading.Thread(target=lb.serve_forever, daemon=True).start()
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+            s.sendall(b"GET / HTTP/1.1\r\nHost: x\r\n")
+            time.sleep(1.0)
+            sent_at = time.time()
+            s.sendall(b"\r\n")
+            while s.recv(4096):
+                pass
+    finally:
+        lb.shutdown()
+        backend.shutdown()
+        backend.server_close()
+    response_time_ms, received_at = fake.requests[0][4], fake.requests[0][6]
+    assert 10 <= response_time_ms < 500
+    assert received_at >= sent_at - 0.05  # when the request arrived, not when the client connected

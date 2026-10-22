@@ -145,10 +145,15 @@ class HealthChecker:
             # disagrees with the router (removed and re-added between rounds,
             # so the router says down while we still say up) starts over;
             # otherwise no transition would ever fire and it would stay down.
-            self._states = {
-                b: kept if (kept := self._states.get(b)) and kept.healthy == initial[b] else HealthState(initial[b])
-                for b in backends
-            }
+            new = [b for b in backends
+                   if not ((kept := self._states.get(b)) and kept.healthy == initial[b])]
+            self._states = {b: HealthState(initial[b]) if b in new else self._states[b] for b in backends}
+        if self.db:
+            # servers.status otherwise only changes on a transition, so a row
+            # left at 'down' or 'removed' by an earlier run would never be
+            # corrected for a backend that starts (optimistically) up.
+            for b in new:
+                self.db.log_status(b, "up" if initial[b] else "down")
         for backend in backends:
             if self._stop.is_set():
                 return

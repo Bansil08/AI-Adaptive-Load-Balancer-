@@ -54,6 +54,7 @@ log = logging.getLogger(__name__)
 
 RECONNECT_BACKOFF_START = 0.5   # seconds; doubles after each failed attempt
 RECONNECT_BACKOFF_MAX = 5.0
+SCHEMA_ERROR_LOG_EVERY = 60.0   # seconds between repeats of the "schema missing" error
 
 
 def _utc(timestamp: float) -> datetime:
@@ -148,6 +149,7 @@ class DBWriter:
         self._counters_lock = threading.Lock()
         self._c = {name: 0 for name in WriterCounters.__dataclass_fields__}
         self.run_id: int | None = None  # tagged onto requests during an experiment (Phase 5)
+        self._schema_error_logged_at = -SCHEMA_ERROR_LOG_EVERY
 
     # --- producer side: called from worker / health / heartbeat threads -------------
 
@@ -184,6 +186,10 @@ class DBWriter:
 
     def stop(self) -> bool:
         """Flush everything still queued (up to shutdown_timeout). True if all was written."""
+        if self._thread.ident is None:  # never started: nothing was written, nothing to flush
+            self._queue.close()
+            left = len(self._queue)
+            return left == 0
         dropped_before = self.counters().dropped
         self._give_up_at = time.monotonic() + self.settings.shutdown_timeout
         # close() lets the thread drain what is queued: get() keeps returning
@@ -248,6 +254,17 @@ class DBWriter:
                     log.warning("db writer: batch of %d rolled back (%s); retrying row by row",
                                 len(batch), exc.diag.message_primary or exc)
                     self._write_rows_individually(conn, batch)
+                return
+            except psycopg.ProgrammingError as exc:
+                # e.g. UndefinedTable: the schema was never applied. Retrying
+                # can't help and a traceback per batch (every 200 ms) would bury
+                # the message, so say it clearly, at most once a minute.
+                self._count("rejected", len(batch))
+                now = time.monotonic()
+                if now - self._schema_error_logged_at >= SCHEMA_ERROR_LOG_EVERY:
+                    self._schema_error_logged_at = now
+                    log.error("db writer: %s; dropping records (did you run scripts/init_db.py?)",
+                              exc.diag.message_primary or exc)
                 return
             except (psycopg.OperationalError, psycopg.InterfaceError) as exc:
                 # Connection-level problem: the batch is intact in memory, so retry it.

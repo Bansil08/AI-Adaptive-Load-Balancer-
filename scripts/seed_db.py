@@ -15,6 +15,7 @@ Usage (DESTROYS the target database's log data; never point it at real data):
 """
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -88,7 +89,12 @@ def main() -> None:
     parser.add_argument("--dbname", required=True, help="database to fill (its log tables are emptied first)")
     parser.add_argument("--requests", type=int, default=1_000_000)
     parser.add_argument("--days", type=int, default=8)
+    parser.add_argument("--force", action="store_true", help="allow seeding the main database")
     args = parser.parse_args()
+    main_db = os.environ.get("POSTGRES_DB", "adaptive_lb")
+    if args.dbname == main_db and not args.force:
+        parser.error(f"{main_db} is the main database configured in .env; seeding it deletes all its "
+                     "log data. Use a separate database, or pass --force if you really mean it.")
     for table, seconds in seed(make_conninfo(database_url(), dbname=args.dbname), args.requests, args.days).items():
         print(f"{table}: {seconds:.1f}s")
 

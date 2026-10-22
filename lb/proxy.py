@@ -304,8 +304,6 @@ class Proxy:
         """Serve one client connection: read one request, proxy it, reply, close."""
         client_ip = client_addr[0]
         settings = self.settings
-        start = time.perf_counter()
-        received_at = time.time()  # wall-clock time for the log; perf_counter only measures intervals
         try:
             client_sock.settimeout(settings.client_timeout)
             try:
@@ -326,6 +324,11 @@ class Proxy:
                 return
             if request is None:
                 return  # connected and closed without sending anything
+            # Timed from the moment the whole request has arrived, so a client
+            # that uploads slowly doesn't count as a slow backend (measured
+            # before this: a 10 ms backend logged at 1516 ms behind a 1.5 s upload).
+            start = time.perf_counter()
+            received_at = time.time()  # wall-clock time for the log; perf_counter only measures intervals
 
             if self.rate_limiter and not self.rate_limiter.allow(client_ip):
                 # Checked after reading the request so the rejection can be logged

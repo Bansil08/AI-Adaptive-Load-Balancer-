@@ -135,3 +135,14 @@ def test_bad_database_values_raise_value_error(tmp_path, content):
     path.write_text(content)
     with pytest.raises(ValueError):
         load_lb_config(path)
+
+
+
+def test_seed_script_refuses_the_main_database():
+    import subprocess
+    import sys
+    from lb.config import PROJECT_ROOT
+    result = subprocess.run([sys.executable, "scripts/seed_db.py", "--dbname", "adaptive_lb", "--requests", "1"],
+                            cwd=PROJECT_ROOT, capture_output=True, text=True,
+                            env={**__import__("os").environ, "POSTGRES_DB": "adaptive_lb"})
+    assert result.returncode != 0 and "main database" in result.stderr
