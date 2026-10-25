@@ -13,8 +13,8 @@ For each (strategy, scenario, repeat):
   3. send the scenario's load with the load generator, firing its events
      (slow a backend down, kill one) at their times;
   4. stop the LB (its DB writer flushes the request log), then compute avg
-     and p95 latency, error rate and throughput IN SQL from the requests
-     tagged with this run_id and insert them into run_results.
+     and p50 / p95 / p99 latency, error rate and throughput IN SQL from the
+     requests tagged with this run_id and insert them into run_results.
 
 Fairness and repeatability: repeat i uses seed + i for the arrival times and
 the backends' jitter, and every strategy gets the SAME seeds, so both see an
@@ -115,15 +115,22 @@ def batch_prefix(strategies) -> str:
     """"baseline" for a Phase 5 batch, "comparison" once an ML strategy is in it."""
     return "baseline" if set(strategies) <= set(BASELINES) else "comparison"
 
+# Percentiles: ONE percentile_cont call over an array of fractions, so p50, p95
+# and p99 come from the same sort and the same method (linear interpolation
+# between the two nearest values) as the dashboard's live view
+# (dashboard_live_traffic in db/queries.sql).
 RUN_RESULTS_SQL = """
-INSERT INTO run_results (run_id, avg_latency_ms, p95_latency_ms, error_rate, throughput_rps)
-SELECT %(run_id)s,
+INSERT INTO run_results (run_id, avg_latency_ms, p50_latency_ms, p95_latency_ms, p99_latency_ms,
+                         error_rate, throughput_rps)
+SELECT run_id, avg_ms, coalesce(ms[1], 0), coalesce(ms[2], 0), coalesce(ms[3], 0), error_rate, throughput
+FROM (
+SELECT %(run_id)s AS run_id,
        -- Latency over successful requests only: a fast 502 would otherwise make
        -- a failing run look faster. Errors are counted separately.
-       coalesce(avg(r.response_time_ms) FILTER (WHERE r.status_code < 500), 0),
-       coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY r.response_time_ms)
-                FILTER (WHERE r.status_code < 500), 0),
-       coalesce(avg((r.status_code >= 500)::int), 0),
+       coalesce(avg(r.response_time_ms) FILTER (WHERE r.status_code < 500), 0) AS avg_ms,
+       percentile_cont(ARRAY[0.5, 0.95, 0.99]) WITHIN GROUP (ORDER BY r.response_time_ms)
+           FILTER (WHERE r.status_code < 500) AS ms,
+       coalesce(avg((r.status_code >= 500)::int), 0) AS error_rate,
        -- Throughput = successful requests / the time it took to serve them: from
        -- the start of the load to the last response, or the planned duration if
        -- that is longer. Dividing by the planned 30 s alone credited a strategy
@@ -132,11 +139,23 @@ SELECT %(run_id)s,
        count(*) FILTER (WHERE r.status_code < 500)
          / greatest(%(duration)s::float8,
                     extract(epoch FROM max(r.received_at + r.response_time_ms * interval '1 millisecond')
-                                       - min(e.started_at)))
+                                       - min(e.started_at))) AS throughput
 FROM requests r JOIN experiment_runs e ON e.id = r.run_id
 WHERE r.run_id = %(run_id)s
-RETURNING avg_latency_ms, p95_latency_ms, error_rate, throughput_rps
+) per_run
+RETURNING avg_latency_ms, p50_latency_ms, p95_latency_ms, p99_latency_ms, error_rate, throughput_rps
 """
+
+LATENCY_KEYS = ("p50_latency_ms", "p95_latency_ms", "p99_latency_ms")
+
+
+def run_result(conn: psycopg.Connection, run_id: int, duration: float) -> dict:
+    """Insert one run's run_results row (RUN_RESULTS_SQL) and return its values by column name."""
+    avg, p50, p95, p99, error_rate, throughput = conn.execute(
+        RUN_RESULTS_SQL, {"run_id": run_id, "duration": duration}).fetchone()
+    return {"avg_latency_ms": avg, "p50_latency_ms": p50, "p95_latency_ms": p95, "p99_latency_ms": p99,
+            "error_rate": error_rate, "throughput_rps": throughput}
+
 
 SHARE_SQL = """
 SELECT s.port, count(*)
@@ -246,8 +265,7 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
     # LB stamps requests with), so "seconds since start" lines up with the events.
     conn.execute("UPDATE experiment_runs SET started_at = to_timestamp(%s), ended_at = now() WHERE id = %s",
                  (load_started, run_id))
-    avg, p95, error_rate, throughput = conn.execute(
-        RUN_RESULTS_SQL, {"run_id": run_id, "duration": duration}).fetchone()
+    result = run_result(conn, run_id, duration)
     logged = conn.execute("SELECT count(*) FROM requests WHERE run_id = %s", (run_id,)).fetchone()[0]
     port_to_name = {port: name for name, port in notes["backends"].items()}
     share = {port_to_name.get(port, str(port)): n for port, n in conn.execute(SHARE_SQL, (run_id,)).fetchall()}
@@ -267,8 +285,7 @@ def run_once(conn: psycopg.Connection, strategy: str, scenario: Scenario, repeat
         writer.writerows((round(r.scheduled_s, 4), round(r.latency_ms, 3), r.status, r.error, r.backend)
                          for r in results)
     return {"run_id": run_id, "strategy": strategy, "scenario": scenario.name, "repeat": repeat,
-            "avg_latency_ms": avg, "p95_latency_ms": p95, "error_rate": error_rate,
-            "throughput_rps": throughput, "share": share, "logged_rows": logged,
+            **result, "share": share, "logged_rows": logged,
             "client_answered": answered, "client": client, "fallbacks": fallbacks, "duration": duration}
 
 
@@ -285,11 +302,9 @@ def recompute_batch(conn: psycopg.Connection, batch: str) -> list[dict]:
             continue  # a run that never finished
         with conn.transaction():
             conn.execute("DELETE FROM run_results WHERE run_id = %s", (run_id,))
-            avg, p95, error_rate, throughput = conn.execute(
-                RUN_RESULTS_SQL, {"run_id": run_id, "duration": notes["duration"]}).fetchone()
+            result = run_result(conn, run_id, notes["duration"])
         runs.append({"run_id": run_id, "strategy": strategy, "scenario": scenario, "repeat": notes["repeat"],
-                     "avg_latency_ms": avg, "p95_latency_ms": p95, "error_rate": error_rate,
-                     "throughput_rps": throughput, "share": notes["share"], "logged_rows": notes["logged_rows"],
+                     **result, "share": notes["share"], "logged_rows": notes["logged_rows"],
                      "client_answered": notes["client_answered"], "client": notes["client"],
                      "fallbacks": notes.get("fallbacks", 0), "duration": notes["duration"],
                      "base_seed": notes["seed"] - notes["repeat"]})  # repeat i ran with seed + i
@@ -306,7 +321,8 @@ def aggregate(runs: list[dict]) -> dict:
         for name, n in r["share"].items():
             shares[name] = shares.get(name, 0) + n
     total = sum(shares.values()) or 1
-    return {"runs": len(runs), "avg_latency_ms": stats("avg_latency_ms"), "p95_latency_ms": stats("p95_latency_ms"),
+    return {"runs": len(runs), "avg_latency_ms": stats("avg_latency_ms"),
+            **{key: stats(key) for key in LATENCY_KEYS},
             "error_rate": stats("error_rate"), "throughput_rps": stats("throughput_rps"),
             "share": {name: n / total for name, n in sorted(shares.items())},
             "fallback_rate": sum(r.get("fallbacks", 0) for r in runs) / max(1, sum(r["logged_rows"] for r in runs))}
@@ -325,7 +341,8 @@ def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Pa
         "Latency is the load balancer's `response_time_ms` over successful requests; error rate is 5xx over "
         "all requests; throughput is successful requests divided by the time taken to serve them (load start "
         "to last response, at least the planned duration). Each cell is the mean ± sample standard deviation "
-        "over the repeats; p95 also shows its min–max range. Retries off, health checks every 1 s, circuit breaker on, capacity 8 requests at "
+        "over the repeats, with the percentiles' min–max range in brackets. Percentiles are computed per run from "
+        "all successful requests; p99 rests on the slowest 1% of them, so it is noisier than p95. Retries off, health checks every 1 s, circuit breaker on, capacity 8 requests at "
         "a time per backend."
         + (" Fallbacks: share of an ML strategy's requests routed by least connections instead (no fresh "
            "heartbeat or latency history yet, an error, or over the 2 ms decision budget)." if ml else ""), "",
@@ -333,18 +350,19 @@ def write_report(batch: str, seed: int, repeats: int, runs: list[dict], path: Pa
     for name in scenarios:
         scenario = SCENARIOS[name]
         lines += [f"## {name}", "", scenario.description, "",
-                  "| Strategy | Avg latency (ms) | p95 latency (ms) [min–max] | Error rate | Throughput (req/s) | Share of requests |"
-                  + (" Fallbacks |" if ml else ""),
-                  "|---|---:|---:|---:|---:|---|" + ("---:|" if ml else "")]
+                  "| Strategy | p50 (ms) [min–max] | p95 (ms) [min–max] | p99 (ms) [min–max] | Avg latency (ms) "
+                  "| Error rate | Throughput (req/s) | Share of requests |" + (" Fallbacks |" if ml else ""),
+                  "|---|---:|---:|---:|---:|---:|---:|---|" + ("---:|" if ml else "")]
         for strategy in strategies:
             cell = [r for r in runs if r["scenario"] == name and r["strategy"] == strategy]
             if not cell:
                 continue
             a = aggregate(cell)
             share = ", ".join(f"{k} {v:.0%}" for k, v in a["share"].items())
-            avg, p95, tput = a["avg_latency_ms"], a["p95_latency_ms"], a["throughput_rps"]
-            lines.append(f"| {strategy} | {avg['mean']:.1f} ± {avg['sd']:.1f} | {p95['mean']:.1f} ± {p95['sd']:.1f} "
-                         f"[{p95['min']:.0f}–{p95['max']:.0f}] | "
+            avg, tput = a["avg_latency_ms"], a["throughput_rps"]
+            percentiles = " | ".join(f"{p['mean']:.1f} ± {p['sd']:.1f} [{p['min']:.0f}–{p['max']:.0f}]"
+                                     for p in (a[key] for key in LATENCY_KEYS))
+            lines.append(f"| {strategy} | {percentiles} | {avg['mean']:.1f} ± {avg['sd']:.1f} | "
                          f"{a['error_rate']['mean']:.2%} | {tput['mean']:.1f} ± {tput['sd']:.1f} | {share} |"
                          + ((f" {a['fallback_rate']:.2%} |" if strategy not in BASELINES else " – |") if ml else ""))
         lines.append("")
@@ -393,7 +411,8 @@ def main() -> None:
                     run = run_once(conn, strategy, scenario, repeat, args.seed + repeat, batch, duration)
                     runs.append(run)
                     print(f"{name:<16} {strategy:<18} repeat {repeat}: avg {run['avg_latency_ms']:7.1f} ms  "
-                          f"p95 {run['p95_latency_ms']:7.1f} ms  errors {run['error_rate']:6.2%}  "
+                          f"p50 {run['p50_latency_ms']:7.1f}  p95 {run['p95_latency_ms']:7.1f}  "
+                          f"p99 {run['p99_latency_ms']:7.1f} ms  errors {run['error_rate']:6.2%}  "
                           f"{run['throughput_rps']:6.1f} req/s  share {run['share']}  "
                           f"fallbacks {run['fallbacks']}", flush=True)
     save(batch, args.seed, args.repeats, runs, plots=not args.no_plots)

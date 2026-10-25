@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS run_results (
     error_rate      DOUBLE PRECISION NOT NULL CHECK (error_rate BETWEEN 0 AND 1),
     throughput_rps  DOUBLE PRECISION NOT NULL CHECK (throughput_rps >= 0)
 );
+-- p50 and p99, added after the Phase 7 batch. ALTER rather than new lines in
+-- CREATE TABLE, so a fresh database and an upgraded one end up identical.
+-- Nullable: runs measured before these existed have no value ("—" on the
+-- dashboard) until `run_experiments --recompute` rebuilds them from `requests`.
+ALTER TABLE run_results ADD COLUMN IF NOT EXISTS p50_latency_ms DOUBLE PRECISION CHECK (p50_latency_ms >= 0);
+ALTER TABLE run_results ADD COLUMN IF NOT EXISTS p99_latency_ms DOUBLE PRECISION CHECK (p99_latency_ms >= 0);
 
 -- Performance indexes (Phase 4). Postgres does NOT index foreign-key columns
 -- automatically, so without these every "requests of server X in the last 15
