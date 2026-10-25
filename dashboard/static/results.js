@@ -48,6 +48,44 @@ const fmtPct = v => v == null ? "–" : `${(v * 100).toFixed(2)}%`;
 const fmtLatency = v => v == null ? "–" : v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${v.toFixed(1)} ms`;
 const fmtChange = v => v == null ? "" : Math.abs(v) < 0.005 ? "no change"
   : `${v < 0 ? "−" : "+"}${Math.abs(v * 100).toFixed(0)}%`;
+const MISSING = "—";   // a percentile this batch never measured (older batches have only p95)
+
+// --- percentile choice ---------------------------------------------------------------
+
+const PERCENTILES = ["p50", "p95", "p99"];
+// A viewer's choice is remembered in localStorage, which can be missing or throw
+// (private windows, blocked storage): then the page simply starts at p95.
+function savedChoice(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return PERCENTILES.includes(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveChoice(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* not remembered: fine */ }
+}
+
+// A segmented p50 | p95 | p99 control; onChange(p) is called with the new choice.
+function percentileToggle(box, current, onChange) {
+  box.textContent = "";
+  box.className = "segmented";
+  box.setAttribute("role", "group");
+  for (const p of PERCENTILES) {
+    const button = el("button", null, p);
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(p === current));
+    button.addEventListener("click", () => {
+      for (const b of box.children) b.setAttribute("aria-pressed", String(b === button));
+      onChange(p);
+    });
+    box.append(button);
+  }
+}
+
+let resultsPercentile = savedChoice("adaptive-lb.results-percentile", "p95");
+const latencyKey = p => `${p}_latency_ms`;
 
 function applyChartDefaults() {
   Chart.defaults.color = css("--ink-2");
@@ -59,15 +97,22 @@ function applyChartDefaults() {
 
 // --- headline + cards ---------------------------------------------------------------
 
+// The headline and cards for the chosen percentile (dashboard/summary.py computes all three).
+function summaryFor(data, p) {
+  if (data.by_percentile && data.by_percentile[p]) return data.by_percentile[p];
+  return p === "p95" ? {headline: data.headline, cards: data.cards || []} : {headline: null, cards: []};
+}
+
 function drawHeadline(data) {
   const banner = $("#headline");
   if (!banner) return;
-  banner.hidden = !data.headline;
-  if (data.headline) $("#headline-text").textContent = data.headline.text;
+  const {headline, cards} = summaryFor(data, resultsPercentile);
+  banner.hidden = !headline;
+  if (headline) $("#headline-text").textContent = headline.text;
 
   const box = $("#winner-cards");
   box.textContent = "";
-  for (const card of data.cards || []) {
+  for (const card of cards) {
     const node = el("div", "card");
     node.append(el("div", "card-scenario", card.label));
     const who = el("div", "card-winner");
@@ -83,10 +128,10 @@ function drawHeadline(data) {
     }
     node.append(who);
     const numbers = el("div", "card-numbers");
-    numbers.append(el("strong", null, `p95 ${fmtLatency(card.p95_ms)}`));
+    numbers.append(el("strong", null, `${card.percentile} ${fmtLatency(card.value_ms)}`));
     if (card.change_vs_round_robin != null && card.winners[0] !== "round_robin") {
       numbers.append(el("span", "muted",
-        ` vs ${fmtLatency(card.round_robin_p95_ms)} round robin (${fmtChange(card.change_vs_round_robin)})`));
+        ` vs ${fmtLatency(card.round_robin_ms)} round robin (${fmtChange(card.change_vs_round_robin)})`));
     }
     node.append(numbers);
     box.append(node);
@@ -106,7 +151,8 @@ const valueLabels = {
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     chart.getDatasetMeta(0).data.forEach((bar, i) => {
-      ctx.fillText(fmtMs(chart.data.datasets[0].data[i]), bar.x, bar.y - 3);
+      const value = chart.data.datasets[0].data[i];
+      if (value != null) ctx.fillText(fmtMs(value), bar.x, bar.y - 3);
     });
     ctx.restore();
   },
@@ -117,25 +163,31 @@ const logScale = new Set();   // scenarios the viewer switched to a log axis (ke
 
 function drawExperimentCharts(data) {
   const cells = data.cells;
+  const p = resultsPercentile, key = latencyKey(p);
   const notes = Object.fromEntries((data.cards || []).map(c => [c.scenario, c.note]));
   experimentCharts.splice(0).forEach(c => c.destroy());
   const box = $("#experiment-charts");
   box.textContent = "";
   for (const scenario of [...new Set(cells.map(c => c.scenario))]) {
     const rows = cells.filter(c => c.scenario === scenario);
-    const values = rows.map(r => r.p95_latency_ms.mean);
+    const values = rows.map(r => r[key] ? r[key].mean : null);
+    const measured = values.filter(v => v != null);
     // Only where one bar dwarfs the rest (round robin's 2-4 s backlogs) is a log axis useful.
-    const skewed = Math.max(...values) / Math.max(Math.min(...values), 1e-9) > 10;
+    const skewed = measured.length > 1 && Math.max(...measured) / Math.max(Math.min(...measured), 1e-9) > 10;
+    // A log axis chosen at one percentile only applies while there is a toggle to undo it:
+    // switching to a percentile where this chart isn't skewed shows it linear again.
+    const log = skewed && logScale.has(scenario);
     const figure = el("figure");
     const head = el("div", "figure-head");
-    const caption = el("figcaption", null, `${scenario.replaceAll("_", " ")}: p95 latency (ms)`);
+    const caption = el("figcaption", null, `${scenario.replaceAll("_", " ")}: ${p} latency (ms)`);
     caption.append(el("span", "hint", "lower is better"));
     head.append(caption);
     const wrap = el("div", "chart");
     const canvas = el("canvas");
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", `${scenario.replaceAll("_", " ")}: ` +
-      rows.map(r => `${STRATEGY_LABELS[r.strategy] || r.strategy} ${fmtMs(r.p95_latency_ms.mean)} ms`).join(", "));
+      rows.map(r => `${STRATEGY_LABELS[r.strategy] || r.strategy} ` +
+                    (r[key] ? `${fmtMs(r[key].mean)} ms` : "not measured")).join(", "));
     wrap.append(canvas);
     figure.append(head, wrap);
     if (notes[scenario]) figure.append(el("p", "note", notes[scenario]));
@@ -156,12 +208,12 @@ function drawExperimentCharts(data) {
         maintainAspectRatio: false,
         layout: {padding: {top: 18}},                         // room for the value labels
         scales: {x: {grid: {display: false}, ticks: {autoSkip: false, maxRotation: 0, font: {size: 10}}},
-                 y: logScale.has(scenario) ? {type: "logarithmic"} : {beginAtZero: true}},
+                 y: log ? {type: "logarithmic"} : {beginAtZero: true}},
         plugins: {
           legend: {display: false},                            // the x labels name every bar
           tooltip: {callbacks: {label: item => {
-            const r = rows[item.dataIndex].p95_latency_ms;
-            return `p95 ${fmtSpread(r)} (min ${fmtMs(r.min)}, max ${fmtMs(r.max)})`;
+            const r = rows[item.dataIndex][key];
+            return `${p} ${fmtSpread(r)} (min ${fmtMs(r.min)}, max ${fmtMs(r.max)})`;
           }}},
         },
       },
@@ -170,19 +222,31 @@ function drawExperimentCharts(data) {
     experimentCharts.push(chart);
 
     if (skewed) {
-      const toggle = el("button", "toggle", logScale.has(scenario) ? "Linear scale" : "Log scale");
+      const toggle = el("button", "toggle", log ? "Linear scale" : "Log scale");
       toggle.type = "button";
       toggle.title = "Switch the y axis between linear and logarithmic";
       toggle.addEventListener("click", () => {
-        const log = !logScale.has(scenario);
-        log ? logScale.add(scenario) : logScale.delete(scenario);
-        chart.options.scales.y = log ? {type: "logarithmic"} : {beginAtZero: true};
+        const toLog = !logScale.has(scenario);
+        toLog ? logScale.add(scenario) : logScale.delete(scenario);
+        chart.options.scales.y = toLog ? {type: "logarithmic"} : {beginAtZero: true};
         chart.update();
-        toggle.textContent = log ? "Linear scale" : "Log scale";
+        toggle.textContent = toLog ? "Linear scale" : "Log scale";
       });
       head.append(toggle);
     }
   }
+}
+
+// mean ± SD, with the min–max range on a smaller second line; "—" if not measured.
+function spreadCell(m) {
+  const td = cell(null, "num");
+  if (!m) {
+    td.textContent = MISSING;
+    td.title = "not measured in this batch (older batches have only p95)";
+    return td;
+  }
+  td.append(el("div", null, fmtSpread(m)), el("div", "range", `${fmtMs(m.min)}–${fmtMs(m.max)}`));
+  return td;
 }
 
 function drawExperimentTable(cells) {
@@ -199,7 +263,7 @@ function drawExperimentTable(cells) {
     tr.append(
       name,
       cell(c.runs, "num"),
-      cell(fmtSpread(c.p95_latency_ms) + ` [${fmtMs(c.p95_latency_ms.min)}–${fmtMs(c.p95_latency_ms.max)}]`, "num"),
+      ...PERCENTILES.map(p => spreadCell(c[latencyKey(p)])),
       cell(fmtSpread(c.avg_latency_ms), "num"),
       cell(fmtPct(c.error_rate.mean), "num"),
       cell(c.throughput_rps.mean.toFixed(1), "num"),
@@ -209,6 +273,14 @@ function drawExperimentTable(cells) {
 }
 
 function drawResults(data) {
+  // One toggle for the headline, the cards and all four charts (the table shows all three).
+  const toggle = $("#results-percentile");
+  if (toggle) percentileToggle(toggle, resultsPercentile, p => {
+    resultsPercentile = p;
+    saveChoice("adaptive-lb.results-percentile", p);
+    drawHeadline(data);
+    drawExperimentCharts(data);
+  });
   drawHeadline(data);
   drawExperimentCharts(data);
   drawExperimentTable(data.cells);
