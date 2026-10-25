@@ -6,7 +6,7 @@
 Two sources, because they hold different things:
 
   - PostgreSQL (the Phase 4 views in db/queries.sql): what HAS happened,
-    requests per second and p95 latency per backend, error rates, and the
+    requests per second and p50 / p95 / p99 latency per backend, error rates, and the
     experiment results. The LB's single DB writer puts every request there.
   - The LB's admin API (GET /backends): what IS true right now, i.e. the
     active strategy, each backend's health and circuit-breaker state and its
@@ -53,7 +53,7 @@ from flask import Flask, jsonify, render_template, request
 from psycopg.rows import dict_row
 
 from dashboard.load import DemoLoad
-from dashboard.summary import headline, scenario_cards
+from dashboard.summary import PERCENTILES, headline, scenario_cards, summaries
 from lb.config import PROJECT_ROOT, database_url
 
 ADMIN_URL = os.environ.get("LB_ADMIN_URL", "http://127.0.0.1:8081").rstrip("/")
@@ -68,6 +68,7 @@ CONTROL_HOSTS = {h.strip() for h in os.environ.get("DASHBOARD_HOSTS", "localhost
 STATIC_RESULTS = PROJECT_ROOT / "docs" / "data" / "results.json"
 STRATEGY_ORDER = ("round_robin", "least_connections", "ml_latency", "bandit")
 SCENARIO_ORDER = ("unequal_servers", "sudden_slowdown", "traffic_spike", "server_crash")  # as in the reports
+CELL_METRICS = ("avg_latency_ms", "p50_latency_ms", "p95_latency_ms", "p99_latency_ms", "error_rate", "throughput_rps")
 
 app = Flask(__name__)
 app.config["ADMIN_URL"] = ADMIN_URL
@@ -107,11 +108,12 @@ def index():
 
 @app.get("/api/traffic")
 def traffic():
-    """Requests per second and p95 per backend, 5-second buckets, last 2 minutes."""
-    rows = query("SELECT server, bucket, requests_per_second, p95_latency_ms "
+    """Requests per second and p50 / p95 / p99 per backend, 5-second buckets, last 2 minutes."""
+    rows = query("SELECT server, bucket, requests_per_second, p50_latency_ms, p95_latency_ms, p99_latency_ms "
                  "FROM dashboard_live_traffic ORDER BY bucket, server")
     return jsonify([{"server": r["server"], "t": r["bucket"].isoformat(),
-                     "rps": as_number(r["requests_per_second"]), "p95_ms": as_number(r["p95_latency_ms"])}
+                     "rps": as_number(r["requests_per_second"]),
+                     **{f"{p}_ms": as_number(r[f"{p}_latency_ms"]) for p in PERCENTILES}}
                     for r in rows])
 
 
@@ -173,17 +175,23 @@ def experiments():
     if batch is None:
         if STATIC_RESULTS.exists():
             data = json.loads(STATIC_RESULTS.read_text())
-            return jsonify({key: data[key] for key in ("batch", "cells", "headline", "cards")}
-                           | {"source": "docs/data/results.json"})
-        return jsonify({"batch": None, "cells": [], "headline": None, "cards": []})
+            keys = ("batch", "cells", "headline", "cards", "by_percentile")
+            return jsonify({key: data[key] for key in keys if key in data} | {"source": "docs/data/results.json"})
+        return jsonify({"batch": None, "cells": [], "headline": None, "cards": [], "by_percentile": {}})
     cells = batch_cells(batch)
-    return jsonify({"batch": batch, "cells": cells, "headline": headline(cells), "cards": scenario_cards(cells)})
+    return jsonify({"batch": batch, "cells": cells, "headline": headline(cells), "cards": scenario_cards(cells),
+                    "by_percentile": summaries(cells)})
 
 
 def batch_cells(batch: str) -> list[dict]:
-    """run_results of one batch, aggregated per (scenario, strategy): mean, standard deviation, min, max."""
+    """run_results of one batch, aggregated per (scenario, strategy): mean, standard deviation, min, max.
+
+    A metric some run of the cell lacks (p50 / p99 of a batch measured before
+    those columns existed) is None for the whole cell, never a mean of the rest.
+    """
     rows = query("""
-        SELECT e.scenario, e.strategy, rr.avg_latency_ms, rr.p95_latency_ms, rr.error_rate, rr.throughput_rps
+        SELECT e.scenario, e.strategy, rr.avg_latency_ms, rr.p50_latency_ms, rr.p95_latency_ms, rr.p99_latency_ms,
+               rr.error_rate, rr.throughput_rps
         FROM run_results rr JOIN experiment_runs e ON e.id = rr.run_id
         WHERE e.notes::jsonb ->> 'batch' = %s ORDER BY e.id""", (batch,))
     cells: dict[tuple[str, str], list[dict]] = {}
@@ -191,14 +199,15 @@ def batch_cells(batch: str) -> list[dict]:
         cells.setdefault((r["scenario"], r["strategy"]), []).append(r)
 
     def spread(values):
+        if any(v is None for v in values):
+            return None
         return {"mean": statistics.fmean(values), "sd": statistics.stdev(values) if len(values) > 1 else 0.0,
                 "min": min(values), "max": max(values)}
 
     out = []
     for (scenario, strategy), runs in cells.items():
         out.append({"scenario": scenario, "strategy": strategy, "runs": len(runs),
-                    **{key: spread([r[key] for r in runs])
-                       for key in ("avg_latency_ms", "p95_latency_ms", "error_rate", "throughput_rps")}})
+                    **{key: spread([r[key] for r in runs]) for key in CELL_METRICS}})
     rank = {name: i for i, name in enumerate(STRATEGY_ORDER + SCENARIO_ORDER)}
     out.sort(key=lambda c: (rank.get(c["scenario"], 99), c["scenario"], rank.get(c["strategy"], 99)))
     return out
