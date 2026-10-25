@@ -106,8 +106,15 @@ LEFT JOIN LATERAL (
 WHERE r.server_id IS NOT NULL;
 
 -- Live traffic per server in 5-second buckets, last 2 minutes (Phase 7
--- dashboard): requests per second and p95 latency per backend. The per-minute
--- view above is too coarse for a page that refreshes every few seconds.
+-- dashboard): requests per second and p50 / p95 / p99 latency per backend. The
+-- per-minute view above is too coarse for a page that refreshes every few seconds.
+--
+-- The three percentiles come from ONE percentile_cont call over an array of
+-- fractions: one sort per group, and the same method (linear interpolation) as
+-- the experiment results (RUN_RESULTS_SQL in experiments/run_experiments.py).
+-- p50 and p99 come after p95 because CREATE OR REPLACE VIEW can only add
+-- columns at the end. In a quiet 5 s bucket p99 is close to the maximum: it
+-- rests on the slowest ~1% of a few hundred requests.
 --
 -- date_bin() rounds each timestamp down to its 5-second bucket. Only COMPLETE
 -- buckets are shown: the one still filling up (received_at after the start of
@@ -116,16 +123,21 @@ WHERE r.server_id IS NOT NULL;
 -- still land in a bucket that is already shown; the dashboard redraws the
 -- whole window every refresh, so the number corrects itself.
 CREATE OR REPLACE VIEW dashboard_live_traffic AS
-SELECT s.id                                   AS server_id,
-       s.address || ':' || s.port             AS server,
-       date_bin('5 seconds', r.received_at, TIMESTAMPTZ '2000-01-01') AS bucket,
-       count(*)                               AS requests,
-       round(count(*) / 5.0, 2)               AS requests_per_second,
-       round((percentile_cont(0.95) WITHIN GROUP (ORDER BY r.response_time_ms))::numeric, 2)
-                                              AS p95_latency_ms
-FROM servers s
-JOIN requests r
-  ON r.server_id = s.id
- AND r.received_at >= date_bin('5 seconds', now() - interval '2 minutes', TIMESTAMPTZ '2000-01-01')
- AND r.received_at <  date_bin('5 seconds', now(), TIMESTAMPTZ '2000-01-01')
-GROUP BY s.id, server, bucket;
+SELECT server_id, server, bucket, requests, requests_per_second,
+       round(ms[2]::numeric, 2)               AS p95_latency_ms,
+       round(ms[1]::numeric, 2)               AS p50_latency_ms,
+       round(ms[3]::numeric, 2)               AS p99_latency_ms
+FROM (
+    SELECT s.id                               AS server_id,
+           s.address || ':' || s.port         AS server,
+           date_bin('5 seconds', r.received_at, TIMESTAMPTZ '2000-01-01') AS bucket,
+           count(*)                           AS requests,
+           round(count(*) / 5.0, 2)           AS requests_per_second,
+           percentile_cont(ARRAY[0.5, 0.95, 0.99]) WITHIN GROUP (ORDER BY r.response_time_ms) AS ms
+    FROM servers s
+    JOIN requests r
+      ON r.server_id = s.id
+     AND r.received_at >= date_bin('5 seconds', now() - interval '2 minutes', TIMESTAMPTZ '2000-01-01')
+     AND r.received_at <  date_bin('5 seconds', now(), TIMESTAMPTZ '2000-01-01')
+    GROUP BY s.id, server, bucket
+) per_bucket;

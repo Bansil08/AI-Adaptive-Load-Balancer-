@@ -111,17 +111,20 @@ function lineChart(canvas, yTitle) {
   });
 }
 
-let rpsChart, p95Chart;
+let rpsChart, latencyChart;
+let livePercentile = savedChoice("adaptive-lb.live-percentile", "p95");
+let lastTraffic = [];   // redrawn at once when the percentile toggle changes, not at the next poll
 
 function updateLineCharts(points) {
+  lastTraffic = points;
   const buckets = [...new Set(points.map(p => p.t))].sort();
   const servers = [...new Set(points.map(p => p.server))].sort();
   bucketTimes = buckets.map(t => Date.parse(t) / 1000);
   const labels = buckets.map(t => new Date(t).toLocaleTimeString([], {hour12: false}));
   const lookup = new Map(points.map(p => [`${p.server}|${p.t}`, p]));
-  for (const [chart, key, missing] of [[rpsChart, "rps", 0], [p95Chart, "p95_ms", null]]) {
+  for (const [chart, key, missing] of [[rpsChart, "rps", 0], [latencyChart, `${livePercentile}_ms`, null]]) {
     chart.data.labels = labels;
-    // A bucket with no row had no requests: 0 req/s, but no p95 at all (a gap).
+    // A bucket with no row had no requests: 0 req/s, but no latency at all (a gap).
     chart.data.datasets = servers.map(server => ({
       label: server,
       data: buckets.map(t => lookup.get(`${server}|${t}`)?.[key] ?? missing),
@@ -302,7 +305,18 @@ function start() {
   }
   applyChartDefaults();
   rpsChart = lineChart($("#rps-chart"), "requests / s");
-  p95Chart = lineChart($("#p95-chart"), "ms");
+  latencyChart = lineChart($("#latency-chart"), "ms");
+  const showLivePercentile = () => {
+    $("#latency-title").textContent = `${livePercentile} latency per backend, ms`;
+    $("#latency-chart").setAttribute("aria-label", `${livePercentile} latency per backend`);
+  };
+  showLivePercentile();
+  percentileToggle($("#live-percentile"), livePercentile, p => {
+    livePercentile = p;
+    saveChoice("adaptive-lb.live-percentile", p);
+    showLivePercentile();
+    updateLineCharts(lastTraffic);
+  });
   $("#interval").textContent = REFRESH_SECONDS;
   $("#batch").addEventListener("change", event => {
     chosenBatch = event.target.value;

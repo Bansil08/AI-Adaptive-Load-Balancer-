@@ -23,10 +23,12 @@ def add_server(db, port):
                       (port,)).fetchone()[0]
 
 
-def add_run(db, strategy, scenario, batch, p95, avg=10.0):
+def add_run(db, strategy, scenario, batch, p95, avg=10.0, p50=None, p99=None):
+    """p50 / p99 None: a run measured before those columns existed."""
     run_id = db.execute("INSERT INTO experiment_runs (strategy, scenario, notes) VALUES (%s, %s, %s) RETURNING id",
                         (strategy, scenario, json.dumps({"batch": batch}))).fetchone()[0]
-    db.execute("INSERT INTO run_results VALUES (%s, %s, %s, 0, 90)", (run_id, avg, p95))
+    db.execute("INSERT INTO run_results (run_id, avg_latency_ms, p50_latency_ms, p95_latency_ms, p99_latency_ms,"
+               " error_rate, throughput_rps) VALUES (%s, %s, %s, %s, %s, 0, 90)", (run_id, avg, p50, p95, p99))
 
 
 def test_live_traffic_has_complete_5s_buckets_only(client, db):
@@ -44,6 +46,8 @@ def test_live_traffic_has_complete_5s_buckets_only(client, db):
     assert points[0]["server"] == "127.0.0.1:9001"
     assert points[0]["rps"] == 2.0                       # 10 requests / 5 s
     assert points[0]["p95_ms"] == pytest.approx(9.55)    # 1 + 0.95 * 9
+    assert points[0]["p50_ms"] == pytest.approx(5.5)     # 1 + 0.5 * 9
+    assert points[0]["p99_ms"] == pytest.approx(9.91)    # 1 + 0.99 * 9
 
 
 def test_backends_falls_back_to_the_database_when_the_lb_is_down(client, db):
@@ -90,6 +94,20 @@ def test_experiments_aggregates_mean_sd_and_range_per_cell(client, db):
     [cell] = data["cells"]
     assert cell["runs"] == 3
     assert cell["p95_latency_ms"] == {"mean": 20.0, "sd": 10.0, "min": 10.0, "max": 30.0}
+
+
+def test_experiments_has_p50_and_p99_and_none_for_older_batches(client, db):
+    for p in (10.0, 20.0):
+        add_run(db, "round_robin", "unequal_servers", "new", p, p50=p / 2, p99=p * 2)
+    add_run(db, "round_robin", "unequal_servers", "old", 10.0)          # no p50 / p99
+    [new] = client.get("/api/experiments?batch=new").get_json()["cells"]
+    assert new["p50_latency_ms"]["mean"] == 7.5 and new["p99_latency_ms"]["max"] == 40.0
+    data = client.get("/api/experiments?batch=old").get_json()
+    [old] = data["cells"]
+    assert old["p50_latency_ms"] is None and old["p99_latency_ms"] is None   # "—" on the page
+    assert old["p95_latency_ms"]["mean"] == 10.0
+    assert data["by_percentile"]["p99"] == {"headline": None, "cards": []}
+    assert len(data["by_percentile"]["p95"]["cards"]) == 1
 
 
 def test_experiments_defaults_to_the_newest_complete_batch(client, db):

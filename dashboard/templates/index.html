@@ -72,9 +72,13 @@
       <div class="chart"><canvas id="rps-chart" role="img" aria-label="Requests per second per backend"></canvas></div>
     </figure>
     <figure>
-      <figcaption>p95 latency per backend, ms <span class="muted">(5 s buckets, last 2 min)</span>
-        <span class="hint">lower is better</span></figcaption>
-      <div class="chart"><canvas id="p95-chart" role="img" aria-label="p95 latency per backend"></canvas></div>
+      <div class="figure-head">
+        <figcaption><span id="latency-title">p95 latency per backend, ms</span>
+          <span class="muted">(5 s buckets, last 2 min)</span>
+          <span class="hint">lower is better</span></figcaption>
+        <div id="live-percentile" aria-label="Latency percentile"></div>
+      </div>
+      <div class="chart"><canvas id="latency-chart" role="img" aria-label="p95 latency per backend"></canvas></div>
     </figure>
   </section>
 
@@ -84,13 +88,17 @@
       <label>Batch <select id="batch"></select></label>
     </div>
     <p class="muted">Each run: fresh backends and LB, 30 s of open-loop load; mean ± standard deviation over
-      the repeats, min–max in brackets.</p>
+      the repeats, min–max on the second line.
+      Percentiles are computed per run from all completed (non-5xx) requests; p99 rests on ~1% of samples (~27 per 30 s run
+      at ~90 req/s, ~39 in the traffic spike), so it is noisier than p95.</p>
     <p id="results-source" class="note" hidden></p>
+    <div class="percentile-row"><span class="control-label">Charts and headline show</span>
+      <div id="results-percentile" aria-label="Latency percentile for the charts"></div></div>
     <div id="experiment-charts" class="grid4"></div>
     <div class="table-wrap"><table id="experiments">
       <thead><tr>
-        <th>Scenario</th><th>Strategy</th><th class="num">Runs</th><th class="num">p95 latency (ms)</th>
-        <th class="num">Avg latency (ms)</th><th class="num">Error rate</th><th class="num">Throughput (req/s)</th>
+        <th>Scenario</th><th>Strategy</th><th class="num">Runs</th><th class="num">p50 (ms)</th>
+        <th class="num">p95 (ms)</th><th class="num">p99 (ms)</th><th class="num">Avg latency (ms)</th><th class="num">Error rate</th><th class="num">Throughput (req/s)</th>
       </tr></thead>
       <tbody></tbody>
     </table></div>

@@ -1,6 +1,6 @@
 {
  "batch": "comparison-20261022T212032Z",
- "exported_at": "2026-10-22T23:07:53+00:00",
+ "exported_at": "2026-10-25T16:30:17+00:00",
  "cells": [
   {
    "scenario": "unequal_servers",
@@ -12,11 +12,23 @@
     "min": 85.05610953051001,
     "max": 87.98798924963825
    },
+   "p50_latency_ms": {
+    "mean": 69.2767582993838,
+    "sd": 1.7464455009992994,
+    "min": 67.36587500199676,
+    "max": 70.70229150122032
+   },
    "p95_latency_ms": {
     "mean": 170.0038617593964,
     "sd": 2.2230515235814083,
     "min": 167.4797667990788,
     "max": 171.96059825000702
+   },
+   "p99_latency_ms": {
+    "mean": 173.28315683959227,
+    "sd": 2.544262336572021,
+    "min": 170.29495648137527,
+    "max": 175.286285219554
    },
    "error_rate": {
     "mean": 0.0,
@@ -41,11 +53,23 @@
     "min": 57.45736415491273,
     "max": 61.319824531283686
    },
+   "p50_latency_ms": {
+    "mean": 30.145275299582863,
+    "sd": 2.625838205383314,
+    "min": 27.2629590035649,
+    "max": 32.14510449470254
+   },
    "p95_latency_ms": {
     "mean": 166.34252714909962,
-    "sd": 1.8986173012415328,
-    "min": 164.1493962961249,
-    "max": 167.8711018455942
+    "sd": 1.8986173012415466,
+    "min": 164.14939629612488,
+    "max": 167.87110184559424
+   },
+   "p99_latency_ms": {
+    "mean": 171.62089151272085,
+    "sd": 2.229653329031558,
+    "min": 169.09261925829924,
+    "max": 173.59907052785275
    },
    "error_rate": {
     "mean": 0.0,
@@ -70,11 +94,23 @@
     "min": 26.52770819230201,
     "max": 29.69142780093955
    },
+   "p50_latency_ms": {
+    "mean": 27.811220799776493,
+    "sd": 1.7291069994459756,
+    "min": 25.873124999634456,
+    "max": 29.428375000861706
+   },
    "p95_latency_ms": {
     "mean": 31.27875799946196,
-    "sd": 2.5815084363325917,
+    "sd": 2.5815084363325926,
     "min": 28.438399999868125,
     "max": 33.535889698396204
+   },
+   "p99_latency_ms": {
+    "mean": 52.120530721236754,
+    "sd": 14.73658183200662,
+    "min": 37.881566274954906,
+    "max": 69.12678500055341
    },
    "error_rate": {
     "mean": 0.0,
@@ -99,11 +135,23 @@
     "min": 31.612110224904704,
     "max": 35.63290381919242
    },
+   "p50_latency_ms": {
+    "mean": 27.745275000779657,
+    "sd": 1.7477082034541254,
+    "min": 25.755082999239676,
+    "max": 29.085104499245062
+   },
    "p95_latency_ms": {
-    "mean": 70.38229243022214,
-    "sd": 2.017956978388881,
+    "mean": 70.38229243022215,
+    "sd": 2.017956978388891,
     "min": 67.82452500337968,
     "max": 72.68434355137288
+   },
+   "p99_latency_ms": {
+    "mean": 167.86735180053807,
+    "sd": 2.314018129162575,
+    "min": 164.11723347846424,
+    "max": 169.97616136046418
    },
    "error_rate": {
     "mean": 0.0,
@@ -128,11 +176,23 @@
     "min": 294.91141728031363,
     "max": 345.24896718981165
    },
+   "p50_latency_ms": {
+    "mean": 37.98855410059332,
+    "sd": 1.6182308569452022,
+    "min": 36.61145850128378,
+    "max": 40.13241599750472
+   },
    "p95_latency_ms": {
-    "mean": 2333.1298328703992,
-    "sd": 175.12799462538368,
-    "min": 2037.9216250032184,
-    "max": 2482.613876746472
+    "mean": 2333.1298328704,
+    "sd": 175.12799462538388,
+    "min": 2037.9216250032189,
+    "max": 2482.613876746473
+   },
+   "p99_latency_ms": {
+    "mean": 3120.664794880565,
+    "sd": 181.1012441498556,
+    "min": 2873.841209999229,
+    "max": 3314.1074927523064
    },
    "error_rate": {
     "mean": 0.0,
@@ -157,11 +217,23 @@
     "min": 48.24532843964385,
     "max": 51.3852900630263
    },
+   "p50_latency_ms": {
+    "mean": 37.07838330010418,
+    "sd": 1.1719519590685883,
+    "min": 36.29668749999837,
+    "max": 39.15341699757846
+   },
    "p95_latency_ms": {
-    "mean": 43.59578054005393,
-    "sd": 2.4633952541546833,
-    "min": 40.00628134963335,
-    "max": 45.884058001683925
+    "mean": 43.59578054005397,
+    "sd": 2.463395254154706,
+    "min": 40.00628134963336,
+    "max": 45.8840580016841
+   },
+   "p99_latency_ms": {
+    "mean": 327.6173804365099,
+    "sd": 1.1335533546561811,
+    "min": 326.52181976300204,
+    "max": 329.17123474064283
    },
    "error_rate": {
     "mean": 0.0,
@@ -186,11 +258,23 @@
     "min": 37.21420216771619,
     "max": 40.184219571602554
    },
+   "p50_latency_ms": {
+    "mean": 37.69908769900212,
+    "sd": 1.2070058477600898,
+    "min": 36.50539599402691,
+    "max": 39.366666998830624
+   },
    "p95_latency_ms": {
     "mean": 41.866715999276494,
     "sd": 2.102074543898953,
     "min": 39.75852949479304,
     "max": 44.526635304646334
+   },
+   "p99_latency_ms": {
+    "mean": 46.74625773976734,
+    "sd": 1.362457851679308,
+    "min": 44.951544499926975,
+    "max": 48.67079249968809
    },
    "error_rate": {
     "mean": 0.0,
@@ -215,11 +299,23 @@
     "min": 40.54430291690801,
     "max": 46.877575232957426
    },
+   "p50_latency_ms": {
+    "mean": 36.87020409925026,
+    "sd": 1.0968082557377972,
+    "min": 36.08887500013225,
+    "max": 38.80366699740989
+   },
    "p95_latency_ms": {
     "mean": 41.46693170114304,
-    "sd": 1.6007537673679608,
+    "sd": 1.6007537673679606,
     "min": 39.73234190561925,
     "max": 43.653746401832905
+   },
+   "p99_latency_ms": {
+    "mean": 320.24011542355595,
+    "sd": 5.409302263473696,
+    "min": 314.10064798881655,
+    "max": 327.3972176391544
    },
    "error_rate": {
     "mean": 0.0,
@@ -244,11 +340,23 @@
     "min": 650.340412984111,
     "max": 816.3770262064187
    },
+   "p50_latency_ms": {
+    "mean": 67.34270859888056,
+    "sd": 0.17254148180020262,
+    "min": 67.11995899968315,
+    "max": 67.59433399565751
+   },
    "p95_latency_ms": {
     "mean": 3839.836568411264,
-    "sd": 337.69140945079334,
-    "min": 3344.248566946043,
+    "sd": 337.6914094507938,
+    "min": 3344.248566946042,
     "max": 4104.502449999563
+   },
+   "p99_latency_ms": {
+    "mean": 4336.30559409481,
+    "sd": 273.22824795983337,
+    "min": 3975.2727054975553,
+    "max": 4596.469766298104
    },
    "error_rate": {
     "mean": 0.0,
@@ -273,11 +381,23 @@
     "min": 55.458087414317546,
     "max": 56.09742445947752
    },
+   "p50_latency_ms": {
+    "mean": 27.28765839638072,
+    "sd": 0.1261206015115176,
+    "min": 27.16383299411973,
+    "max": 27.499749994603917
+   },
    "p95_latency_ms": {
     "mean": 163.97874691014295,
-    "sd": 0.2807773437531696,
+    "sd": 0.28077734375316626,
     "min": 163.64624950074358,
     "max": 164.30931660433998
+   },
+   "p99_latency_ms": {
+    "mean": 169.03610914836463,
+    "sd": 0.2645521961319472,
+    "min": 168.72016324021388,
+    "max": 169.31772491894662
    },
    "error_rate": {
     "mean": 0.0,
@@ -302,11 +422,23 @@
     "min": 26.35247913814927,
     "max": 27.89793125025857
    },
+   "p50_latency_ms": {
+    "mean": 26.09142100045574,
+    "sd": 0.0764688772428427,
+    "min": 26.00900000106776,
+    "max": 26.21589599948493
+   },
    "p95_latency_ms": {
     "mean": 33.16002465930068,
-    "sd": 2.531837140113897,
-    "min": 30.30845180037431,
+    "sd": 2.5318371401138977,
+    "min": 30.308451800374307,
     "max": 37.25170860270736
+   },
+   "p99_latency_ms": {
+    "mean": 51.59662553411906,
+    "sd": 14.979753886562799,
+    "min": 36.64730510630762,
+    "max": 69.9533581206924
    },
    "error_rate": {
     "mean": 0.0,
@@ -331,11 +463,23 @@
     "min": 31.448800462651693,
     "max": 32.798426047327055
    },
+   "p50_latency_ms": {
+    "mean": 25.891316399065545,
+    "sd": 0.07332326231912517,
+    "min": 25.779915995371994,
+    "max": 25.971833001676714
+   },
    "p95_latency_ms": {
     "mean": 67.96119981925585,
-    "sd": 0.957455684164283,
-    "min": 66.89656039743568,
+    "sd": 0.957455684164286,
+    "min": 66.89656039743566,
     "max": 69.16450049902778
+   },
+   "p99_latency_ms": {
+    "mean": 165.24025961500593,
+    "sd": 0.3347324507194664,
+    "min": 164.76873875653837,
+    "max": 165.56537631971878
    },
    "error_rate": {
     "mean": 0.0,
@@ -360,11 +504,23 @@
     "min": 35.906046697635766,
     "max": 36.20864039845398
    },
+   "p50_latency_ms": {
+    "mean": 36.14802939919173,
+    "sd": 0.11611508738832466,
+    "min": 35.98039599819458,
+    "max": 36.30391699698521
+   },
    "p95_latency_ms": {
     "mean": 38.90094032984052,
     "sd": 0.15684014318951256,
     "min": 38.70814999936556,
     "max": 39.11552270183165
+   },
+   "p99_latency_ms": {
+    "mean": 41.00650223750563,
+    "sd": 1.0736568948661,
+    "min": 39.98127249782556,
+    "max": 42.4442387840827
    },
    "error_rate": {
     "mean": 0.0019123822122737097,
@@ -389,11 +545,23 @@
     "min": 35.87989027182778,
     "max": 36.103365092209245
    },
+   "p50_latency_ms": {
+    "mean": 36.19308350098436,
+    "sd": 0.10783365055263833,
+    "min": 36.057666500710184,
+    "max": 36.296958998718765
+   },
    "p95_latency_ms": {
     "mean": 38.807903050401364,
     "sd": 0.10558247338716929,
     "min": 38.643199602665845,
     "max": 38.93338575071539
+   },
+   "p99_latency_ms": {
+    "mean": 40.63414962185196,
+    "sd": 0.9435391851767848,
+    "min": 39.60293999756686,
+    "max": 41.65449367101243
    },
    "error_rate": {
     "mean": 0.0018382532278407963,
@@ -418,11 +586,23 @@
     "min": 36.408014186895876,
     "max": 36.76901962545741
    },
+   "p50_latency_ms": {
+    "mean": 36.68821649989695,
+    "sd": 0.083802346864811,
+    "min": 36.564000001817476,
+    "max": 36.77891600091243
+   },
    "p95_latency_ms": {
     "mean": 39.61920148009085,
-    "sd": 0.34544183338184764,
+    "sd": 0.34544183338184997,
     "min": 39.27146640198771,
-    "max": 40.07504200271796
+    "max": 40.075042002717964
+   },
+   "p99_latency_ms": {
+    "mean": 42.72567769953456,
+    "sd": 1.899643517487145,
+    "min": 40.31545049772831,
+    "max": 44.451334251352755
    },
    "error_rate": {
     "mean": 0.0018382532278407963,
@@ -447,11 +627,23 @@
     "min": 35.827171472393346,
     "max": 36.094497965192986
    },
+   "p50_latency_ms": {
+    "mean": 36.065070800395915,
+    "sd": 0.09956426651439747,
+    "min": 35.95854149898514,
+    "max": 36.19643750062096
+   },
    "p95_latency_ms": {
     "mean": 38.889235811293474,
     "sd": 0.15748487713887735,
     "min": 38.72647280077217,
     "max": 39.092499901744304
+   },
+   "p99_latency_ms": {
+    "mean": 42.10674399039999,
+    "sd": 2.353568607751604,
+    "min": 40.095799797200016,
+    "max": 44.71732197722303
    },
    "error_rate": {
     "mean": 0.000960232341656749,
@@ -470,17 +662,18 @@
  "headline": {
   "scenario": "unequal_servers",
   "label": "unequal servers",
+  "percentile": "p95",
   "clear_winner": true,
   "winners": [
    "ml_latency"
   ],
-  "p95_ms": 31.27875799946196,
-  "round_robin_p95_ms": 170.0038617593964,
+  "value_ms": 31.27875799946196,
+  "round_robin_ms": 170.0038617593964,
   "change_vs_round_robin": -0.8160114854112535,
-  "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer.",
+  "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer. The bandit's ~4% there is under 5% but over 1%: a fine p95, a slow p99.",
   "strategy": "ml_latency",
   "baseline": "least_connections",
-  "baseline_p95_ms": 166.34252714909962,
+  "baseline_ms": 166.34252714909962,
   "change_vs_baseline": -0.8119617482339587,
   "text": "ML latency: p95 31 ms vs 170 ms for round robin (\u221282%) and 166 ms for least connections (\u221281%) on unequal servers"
  },
@@ -488,56 +681,298 @@
   {
    "scenario": "unequal_servers",
    "label": "unequal servers",
+   "percentile": "p95",
    "clear_winner": true,
    "winners": [
     "ml_latency"
    ],
-   "p95_ms": 31.27875799946196,
-   "round_robin_p95_ms": 170.0038617593964,
+   "value_ms": 31.27875799946196,
+   "round_robin_ms": 170.0038617593964,
    "change_vs_round_robin": -0.8160114854112535,
-   "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer."
+   "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer. The bandit's ~4% there is under 5% but over 1%: a fine p95, a slow p99."
   },
   {
    "scenario": "sudden_slowdown",
    "label": "sudden slowdown",
+   "percentile": "p95",
    "clear_winner": false,
    "winners": [
     "bandit",
     "ml_latency",
     "least_connections"
    ],
-   "p95_ms": 41.46693170114304,
-   "round_robin_p95_ms": 2333.1298328703992,
+   "value_ms": 41.46693170114304,
+   "round_robin_ms": 2333.1298328704,
    "change_vs_round_robin": -0.9822269077712974,
-   "note": "One of three equal backends becomes 10\u00d7 slower halfway. Round robin keeps feeding it and its queue grows; every adaptive strategy steers away within about a second, so they end up within noise of each other."
+   "note": "One of three equal backends becomes 10\u00d7 slower halfway. Round robin keeps feeding it and its queue grows; every adaptive strategy steers away within about a second, so at p95 they are within noise. p99 splits them: least connections still sends the slow backend ~9% of later traffic and the bandit ~3% (over 1% of all requests), ML latency 0.4%."
   },
   {
    "scenario": "traffic_spike",
    "label": "traffic spike",
+   "percentile": "p95",
    "clear_winner": true,
    "winners": [
     "ml_latency"
    ],
-   "p95_ms": 33.16002465930068,
-   "round_robin_p95_ms": 3839.836568411264,
+   "value_ms": 33.16002465930068,
+   "round_robin_ms": 3839.836568411264,
    "change_vs_round_robin": -0.9913642093697179,
    "note": "Load jumps from 30 to 180 req/s. Round robin's third overloads the slow backend and a backlog builds; the others never overload any backend."
   },
   {
    "scenario": "server_crash",
    "label": "server crash",
+   "percentile": "p95",
    "clear_winner": false,
    "winners": [
     "least_connections",
     "bandit",
     "round_robin"
    ],
-   "p95_ms": 38.807903050401364,
-   "round_robin_p95_ms": 38.90094032984052,
+   "value_ms": 38.807903050401364,
+   "round_robin_ms": 38.90094032984052,
    "change_vs_round_robin": -0.002391646028355535,
    "note": "The backends are identical, so after b dies every strategy is choosing between two equal servers and routing can't help. The ~0.2% errors are requests in flight on b when it died or sent before the circuit breaker and health checks removed it (retries were off in these runs)."
   }
  ],
+ "by_percentile": {
+  "p50": {
+   "headline": {
+    "scenario": "traffic_spike",
+    "label": "traffic spike",
+    "percentile": "p50",
+    "clear_winner": true,
+    "winners": [
+     "bandit"
+    ],
+    "value_ms": 25.891316399065545,
+    "round_robin_ms": 67.34270859888056,
+    "change_vs_round_robin": -0.6155290314607877,
+    "note": "Load jumps from 30 to 180 req/s. Round robin's third overloads the slow backend and a backlog builds; the others never overload any backend.",
+    "strategy": "bandit",
+    "baseline": "least_connections",
+    "baseline_ms": 27.28765839638072,
+    "change_vs_baseline": -0.05117119164392569,
+    "text": "Bandit: p50 26 ms vs 67 ms for round robin (\u221262%) and 27 ms for least connections (\u22125%) on traffic spike"
+   },
+   "cards": [
+    {
+     "scenario": "unequal_servers",
+     "label": "unequal servers",
+     "percentile": "p50",
+     "clear_winner": false,
+     "winners": [
+      "bandit",
+      "ml_latency",
+      "least_connections"
+     ],
+     "value_ms": 27.745275000779657,
+     "round_robin_ms": 69.2767582993838,
+     "change_vs_round_robin": -0.5995009627777799,
+     "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer. The bandit's ~4% there is under 5% but over 1%: a fine p95, a slow p99."
+    },
+    {
+     "scenario": "sudden_slowdown",
+     "label": "sudden slowdown",
+     "percentile": "p50",
+     "clear_winner": false,
+     "winners": [
+      "bandit",
+      "least_connections",
+      "ml_latency",
+      "round_robin"
+     ],
+     "value_ms": 36.87020409925026,
+     "round_robin_ms": 37.98855410059332,
+     "change_vs_round_robin": -0.02943913049129694,
+     "note": "One of three equal backends becomes 10\u00d7 slower halfway. Round robin keeps feeding it and its queue grows; every adaptive strategy steers away within about a second, so at p95 they are within noise. p99 splits them: least connections still sends the slow backend ~9% of later traffic and the bandit ~3% (over 1% of all requests), ML latency 0.4%."
+    },
+    {
+     "scenario": "traffic_spike",
+     "label": "traffic spike",
+     "percentile": "p50",
+     "clear_winner": true,
+     "winners": [
+      "bandit"
+     ],
+     "value_ms": 25.891316399065545,
+     "round_robin_ms": 67.34270859888056,
+     "change_vs_round_robin": -0.6155290314607877,
+     "note": "Load jumps from 30 to 180 req/s. Round robin's third overloads the slow backend and a backlog builds; the others never overload any backend."
+    },
+    {
+     "scenario": "server_crash",
+     "label": "server crash",
+     "percentile": "p50",
+     "clear_winner": false,
+     "winners": [
+      "bandit",
+      "round_robin",
+      "least_connections"
+     ],
+     "value_ms": 36.065070800395915,
+     "round_robin_ms": 36.14802939919173,
+     "change_vs_round_robin": -0.0022949687762970432,
+     "note": "The backends are identical, so after b dies every strategy is choosing between two equal servers and routing can't help. The ~0.2% errors are requests in flight on b when it died or sent before the circuit breaker and health checks removed it (retries were off in these runs)."
+    }
+   ]
+  },
+  "p95": {
+   "headline": {
+    "scenario": "unequal_servers",
+    "label": "unequal servers",
+    "percentile": "p95",
+    "clear_winner": true,
+    "winners": [
+     "ml_latency"
+    ],
+    "value_ms": 31.27875799946196,
+    "round_robin_ms": 170.0038617593964,
+    "change_vs_round_robin": -0.8160114854112535,
+    "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer. The bandit's ~4% there is under 5% but over 1%: a fine p95, a slow p99.",
+    "strategy": "ml_latency",
+    "baseline": "least_connections",
+    "baseline_ms": 166.34252714909962,
+    "change_vs_baseline": -0.8119617482339587,
+    "text": "ML latency: p95 31 ms vs 170 ms for round robin (\u221282%) and 166 ms for least connections (\u221281%) on unequal servers"
+   },
+   "cards": [
+    {
+     "scenario": "unequal_servers",
+     "label": "unequal servers",
+     "percentile": "p95",
+     "clear_winner": true,
+     "winners": [
+      "ml_latency"
+     ],
+     "value_ms": 31.27875799946196,
+     "round_robin_ms": 170.0038617593964,
+     "change_vs_round_robin": -0.8160114854112535,
+     "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer. The bandit's ~4% there is under 5% but over 1%: a fine p95, a slow p99."
+    },
+    {
+     "scenario": "sudden_slowdown",
+     "label": "sudden slowdown",
+     "percentile": "p95",
+     "clear_winner": false,
+     "winners": [
+      "bandit",
+      "ml_latency",
+      "least_connections"
+     ],
+     "value_ms": 41.46693170114304,
+     "round_robin_ms": 2333.1298328704,
+     "change_vs_round_robin": -0.9822269077712974,
+     "note": "One of three equal backends becomes 10\u00d7 slower halfway. Round robin keeps feeding it and its queue grows; every adaptive strategy steers away within about a second, so at p95 they are within noise. p99 splits them: least connections still sends the slow backend ~9% of later traffic and the bandit ~3% (over 1% of all requests), ML latency 0.4%."
+    },
+    {
+     "scenario": "traffic_spike",
+     "label": "traffic spike",
+     "percentile": "p95",
+     "clear_winner": true,
+     "winners": [
+      "ml_latency"
+     ],
+     "value_ms": 33.16002465930068,
+     "round_robin_ms": 3839.836568411264,
+     "change_vs_round_robin": -0.9913642093697179,
+     "note": "Load jumps from 30 to 180 req/s. Round robin's third overloads the slow backend and a backlog builds; the others never overload any backend."
+    },
+    {
+     "scenario": "server_crash",
+     "label": "server crash",
+     "percentile": "p95",
+     "clear_winner": false,
+     "winners": [
+      "least_connections",
+      "bandit",
+      "round_robin"
+     ],
+     "value_ms": 38.807903050401364,
+     "round_robin_ms": 38.90094032984052,
+     "change_vs_round_robin": -0.002391646028355535,
+     "note": "The backends are identical, so after b dies every strategy is choosing between two equal servers and routing can't help. The ~0.2% errors are requests in flight on b when it died or sent before the circuit breaker and health checks removed it (retries were off in these runs)."
+    }
+   ]
+  },
+  "p99": {
+   "headline": {
+    "scenario": "sudden_slowdown",
+    "label": "sudden slowdown",
+    "percentile": "p99",
+    "clear_winner": true,
+    "winners": [
+     "ml_latency"
+    ],
+    "value_ms": 46.74625773976734,
+    "round_robin_ms": 3120.664794880565,
+    "change_vs_round_robin": -0.9850204168623127,
+    "note": "One of three equal backends becomes 10\u00d7 slower halfway. Round robin keeps feeding it and its queue grows; every adaptive strategy steers away within about a second, so at p95 they are within noise. p99 splits them: least connections still sends the slow backend ~9% of later traffic and the bandit ~3% (over 1% of all requests), ML latency 0.4%.",
+    "strategy": "ml_latency",
+    "baseline": "least_connections",
+    "baseline_ms": 327.6173804365099,
+    "change_vs_baseline": -0.8573144755706071,
+    "text": "ML latency: p99 47 ms vs 3.12 s for round robin (\u221299%) and 328 ms for least connections (\u221286%) on sudden slowdown"
+   },
+   "cards": [
+    {
+     "scenario": "unequal_servers",
+     "label": "unequal servers",
+     "percentile": "p99",
+     "clear_winner": true,
+     "winners": [
+      "ml_latency"
+     ],
+     "value_ms": 52.120530721236754,
+     "round_robin_ms": 173.28315683959227,
+     "change_vs_round_robin": -0.6992175600223824,
+     "note": "20 / 60 / 150 ms backends. Routing on latency sends ~99% to the fast one, which has capacity to spare; least connections still gives the 150 ms server ~15%, so its p95 is a slow answer. The bandit's ~4% there is under 5% but over 1%: a fine p95, a slow p99."
+    },
+    {
+     "scenario": "sudden_slowdown",
+     "label": "sudden slowdown",
+     "percentile": "p99",
+     "clear_winner": true,
+     "winners": [
+      "ml_latency"
+     ],
+     "value_ms": 46.74625773976734,
+     "round_robin_ms": 3120.664794880565,
+     "change_vs_round_robin": -0.9850204168623127,
+     "note": "One of three equal backends becomes 10\u00d7 slower halfway. Round robin keeps feeding it and its queue grows; every adaptive strategy steers away within about a second, so at p95 they are within noise. p99 splits them: least connections still sends the slow backend ~9% of later traffic and the bandit ~3% (over 1% of all requests), ML latency 0.4%."
+    },
+    {
+     "scenario": "traffic_spike",
+     "label": "traffic spike",
+     "percentile": "p99",
+     "clear_winner": true,
+     "winners": [
+      "ml_latency"
+     ],
+     "value_ms": 51.59662553411906,
+     "round_robin_ms": 4336.30559409481,
+     "change_vs_round_robin": -0.9881012478446206,
+     "note": "Load jumps from 30 to 180 req/s. Round robin's third overloads the slow backend and a backlog builds; the others never overload any backend."
+    },
+    {
+     "scenario": "server_crash",
+     "label": "server crash",
+     "percentile": "p99",
+     "clear_winner": false,
+     "winners": [
+      "least_connections",
+      "round_robin",
+      "bandit",
+      "ml_latency"
+     ],
+     "value_ms": 40.63414962185196,
+     "round_robin_ms": 41.00650223750563,
+     "change_vs_round_robin": -0.009080331053281212,
+     "note": "The backends are identical, so after b dies every strategy is choosing between two equal servers and routing can't help. The ~0.2% errors are requests in flight on b when it died or sent before the circuit breaker and health checks removed it (retries were off in these runs)."
+    }
+   ]
+  }
+ },
  "methodology": {
   "runs": 80,
   "repeats": 5,
@@ -548,6 +983,12 @@
   "duration_s": 30.0,
   "requests": 241560,
   "cross_checked": 80,
+  "requests_per_run": {
+   "server_crash": 2720,
+   "sudden_slowdown": 2720,
+   "traffic_spike": 3917,
+   "unequal_servers": 2720
+  },
   "strategies": 4,
   "scenarios": 4,
   "scenario_descriptions": {

@@ -13,12 +13,14 @@ import pytest
 
 import dashboard.app as dashboard
 from dashboard.load import DemoLoad
-from dashboard.summary import headline, scenario_cards
+from dashboard.summary import headline, scenario_cards, summaries
 
 
-def cell(scenario, strategy, mean, sd=1.0):
+def cell(scenario, strategy, mean, sd=1.0, p99=None):
     spread = {"mean": mean, "sd": sd, "min": mean - sd, "max": mean + sd}
+    p99_spread = None if p99 is None else {"mean": p99, "sd": sd, "min": p99 - sd, "max": p99 + sd}
     return {"scenario": scenario, "strategy": strategy, "runs": 5, "p95_latency_ms": spread,
+            "p50_latency_ms": None, "p99_latency_ms": p99_spread,
             "avg_latency_ms": spread, "error_rate": {"mean": 0, "sd": 0, "min": 0, "max": 0},
             "throughput_rps": {"mean": 90, "sd": 0, "min": 90, "max": 90}}
 
@@ -58,6 +60,36 @@ def test_headline_is_chosen_against_the_strongest_simple_baseline():
 
 def test_no_headline_when_nothing_clearly_wins():
     assert headline([c for c in CELLS if c["scenario"] == "server_crash"]) is None
+
+
+def test_headline_and_cards_follow_the_chosen_percentile():
+    # As measured on sudden slowdown: tied at p95, but at p99 only ML avoids the slowed backend.
+    cells = [cell("sudden_slowdown", "round_robin", 2333, 175, p99=3121),
+             cell("sudden_slowdown", "least_connections", 43.6, 2.5, p99=327.6),
+             cell("sudden_slowdown", "ml_latency", 41.9, 2.1, p99=46.7)]
+    assert not scenario_cards(cells)[0]["clear_winner"]
+    [card] = scenario_cards(cells, "p99")
+    assert card["clear_winner"] and card["winners"] == ["ml_latency"] and card["value_ms"] == 46.7
+    assert headline(cells, "p99")["text"] == ("ML latency: p99 47 ms vs 3.12 s for round robin (−99%) and 328 ms "
+                                              "for least connections (−86%) on sudden slowdown")
+    # p50 was never measured in these cells: no card, no headline, no crash.
+    assert summaries(cells)["p50"] == {"headline": None, "cards": []}
+
+
+def test_headline_without_round_robin_in_the_batch():
+    # Regression: a batch run with --strategies but no round robin crashed on its missing p95.
+    cells = [cell("unequal_servers", "least_connections", 166), cell("unequal_servers", "ml_latency", 31)]
+    assert headline(cells)["text"] == "ML latency: p95 31 ms vs 166 ms for least connections (−81%) on unequal servers"
+
+
+def test_no_winner_from_single_runs():
+    # One run per cell has SD 0, so 36.8 vs 36.9 ms would otherwise be called a "clear" win.
+    cells = [cell("sudden_slowdown", "round_robin", 36.8, 0.0), cell("sudden_slowdown", "ml_latency", 36.9, 0.0)]
+    for c in cells:
+        c["runs"] = 1
+    [card] = scenario_cards(cells)
+    assert not card["clear_winner"] and card["winners"] == ["round_robin", "ml_latency"]
+    assert headline(cells) is None
 
 
 def test_headline_formats_seconds():
