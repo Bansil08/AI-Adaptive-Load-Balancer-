@@ -8,18 +8,30 @@ A multithreaded HTTP load balancer written from scratch in Python (raw `socket` 
 
 ## Results
 
-**Headline:** when backends differ in speed, routing on predicted latency cut **p95 latency by 82% vs round robin and 81% vs least connections** (31 ms vs 170 / 166 ms), and held p95 at **33 ms during a 6× traffic spike where round robin reached 3.8 s**. Where ML did *not* help: after a sudden 10× slowdown, least connections was just as good (within noise), and with identical backends (a crash) ML was slightly worse (39.6 vs 38.8 ms).
+**Headline:** when backends differ in speed, routing on predicted latency cut **p95 latency by 82% vs round robin and 81% vs least connections** (31 ms vs 170 / 166 ms), and held p95 at **33 ms during a 6× traffic spike where round robin reached 3.8 s**. The tail tells more: in the spike, **ML's p99 was 52 ms vs 4.3 s for round robin (−99%) and 169 ms for least connections (−69%)**, and after a sudden 10× slowdown, where p95 called the adaptive strategies a tie, **ML's p99 was 47 ms vs 328 ms for least connections (−86%)**. Where ML did *not* help: at the median (p50) every adaptive strategy is within ~3 ms of the others, after the slowdown least connections matched it at p95 (within noise), and with identical backends (a crash) ML was slightly worse (p95 39.6 vs 38.8 ms).
 
-p95 latency in ms, mean ± standard deviation over 5 runs of 30 s each (80 runs in total). **Bold** = clear winner, beating every other strategy by more than the noise.
+Latency in ms, mean ± standard deviation over 5 runs of 30 s each (80 runs in total). **Bold** = clear winner at that percentile, beating every other strategy by more than the noise. Percentiles are computed per run from all completed (non-5xx) requests (Postgres `percentile_cont`); p99 rests on the slowest ~1% of them (~27 requests per 30 s run at ~90 req/s, ~39 in the spike), so it is noisier than p95: see ML's ± 15 ms.
 
-| Scenario | Round robin | Least connections | ML latency | Bandit |
-|---|---:|---:|---:|---:|
-| **Unequal servers** (20 / 60 / 150 ms backends, 90 req/s) | 170.0 ± 2.2 | 166.3 ± 1.9 | **31.3 ± 2.6** | 70.4 ± 2.0 |
-| **Sudden slowdown** (one of 3 × 30 ms backends → 300 ms at 15 s) | 2,333 ± 175 | 43.6 ± 2.5 | 41.9 ± 2.1 | 41.5 ± 1.6 |
-| **Traffic spike** (unequal backends, 30 → 180 req/s at 10 s) | 3,840 ± 338 | 164.0 ± 0.3 | **33.2 ± 2.5** | 68.0 ± 1.0 |
-| **Server crash** (one of 3 × 30 ms backends killed at 15 s) | 38.9 ± 0.2 | 38.8 ± 0.1 | 39.6 ± 0.3 | 38.9 ± 0.2 |
+| Scenario | Strategy | p50 | p95 | p99 | Avg |
+|---|---|---:|---:|---:|---:|
+| **Unequal servers** (20 / 60 / 150 ms, 90 req/s) | Round robin | 69.3 ± 1.7 | 170.0 ± 2.2 | 173.3 ± 2.5 | 86.8 ± 1.5 |
+|  | Least connections | 30.1 ± 2.6 | 166.3 ± 1.9 | 171.6 ± 2.2 | 59.8 ± 2.0 |
+|  | ML latency | 27.8 ± 1.7 | **31.3 ± 2.6** | **52.1 ± 14.7** | 28.2 ± 1.4 |
+|  | Bandit | 27.7 ± 1.7 | 70.4 ± 2.0 | 167.9 ± 2.3 | 33.8 ± 1.6 |
+| **Sudden slowdown** (one of 3 × 30 ms → 300 ms at 15 s) | Round robin | 38.0 ± 1.6 | 2,333 ± 175 | 3,121 ± 181 | 321.8 ± 20.3 |
+|  | Least connections | 37.1 ± 1.2 | 43.6 ± 2.5 | 327.6 ± 1.1 | 49.3 ± 1.2 |
+|  | ML latency | 37.7 ± 1.2 | 41.9 ± 2.1 | **46.7 ± 1.4** | 38.6 ± 1.2 |
+|  | Bandit | 36.9 ± 1.1 | 41.5 ± 1.6 | 320.2 ± 5.4 | 43.3 ± 2.4 |
+| **Traffic spike** (unequal backends, 30 → 180 req/s at 10 s) | Round robin | 67.3 ± 0.2 | 3,840 ± 338 | 4,336 ± 273 | 748.2 ± 65.5 |
+|  | Least connections | 27.3 ± 0.1 | 164.0 ± 0.3 | 169.0 ± 0.3 | 55.7 ± 0.3 |
+|  | ML latency | 26.1 ± 0.1 | **33.2 ± 2.5** | **51.6 ± 15.0** | 26.9 ± 0.6 |
+|  | Bandit | **25.9 ± 0.1** | 68.0 ± 1.0 | 165.2 ± 0.3 | 32.0 ± 0.6 |
+| **Server crash** (one of 3 × 30 ms killed at 15 s) | Round robin | 36.1 ± 0.1 | 38.9 ± 0.2 | 41.0 ± 1.1 | 36.0 ± 0.1 |
+|  | Least connections | 36.2 ± 0.1 | 38.8 ± 0.1 | 40.6 ± 0.9 | 36.0 ± 0.1 |
+|  | ML latency | 36.7 ± 0.1 | 39.6 ± 0.3 | 42.7 ± 1.9 | 36.6 ± 0.2 |
+|  | Bandit | 36.1 ± 0.1 | 38.9 ± 0.2 | 42.1 ± 2.4 | 36.0 ± 0.1 |
 
-Full results (average latency, errors, throughput, min–max, traffic share per backend): [`experiments/results/comparison_results.md`](experiments/results/comparison_results.md).
+Full results (min–max per percentile, errors, throughput, traffic share per backend): [`experiments/results/comparison_results.md`](experiments/results/comparison_results.md).
 
 **Links:** [static results page](https://bansil08.github.io/AI-Adaptive-Load-Balancer-/) (GitHub Pages, from [`docs/`](docs/index.html)) · [live demo GIF](docs/demo.gif) · [`CONCEPTS.md`](CONCEPTS.md): every feature mapped to the OS / networks / DBMS / ML concept behind it, plus interview questions
 
@@ -93,7 +105,7 @@ flowchart LR
 | **Health checks + heartbeats** (`lb/health.py`, `lb/heartbeat.py`, `backend/agent.py`) | A thread probes every backend (TCP connect, then `GET /health`); each backend's agent reports CPU, memory and active connections over UDP every second. |
 | **Request log** (`lb/db_writer.py`, `db/`) | Workers drop a record on a queue without waiting; one writer thread inserts batches of up to 200 per transaction. The dashboard, the experiments and the ML training data all read it through SQL views. |
 | **Admin API** (`lb/admin.py`) | A separate port: inspect backends, switch strategy at runtime, add or drain-and-remove a backend. Changes need the `X-Admin-Token`. |
-| **Dashboard** (`dashboard/`) | Live requests/s and p95 per backend, health and circuit state, the headline result and per-scenario winners, and the controls: strategy, fault injection per backend, background demo load, with each action marked on the charts. |
+| **Dashboard** (`dashboard/`) | Live requests/s and p50 / p95 / p99 per backend (a toggle picks one), health and circuit state, the headline result and per-scenario winners, and the controls: strategy, fault injection per backend, background demo load, with each action marked on the charts. |
 
 ### One request, step by step
 
@@ -112,7 +124,7 @@ flowchart LR
 | **Round robin** (`lb/strategies/round_robin.py`) | The next backend in turn (a counter under a lock). | Simple, perfectly even. | Ignores load and speed: a backend that can't keep up with its third builds a queue (p95 2.3–3.8 s). |
 | **Least connections** (`least_connections.py`) | The backend with the fewest requests in flight. A slower backend holds requests longer (Little's law), so it gets fewer. | Reacts within a second to a slowed backend, with no model. | Balances *load*, not speed: the 150 ms backend still gets ~15%, so it sets the p95. |
 | **ML latency** (`ml_latency.py`) | Predicts each backend's response time with a linear regression on in-flight requests, CPU, memory and recent average latency (trained offline from the request log, `ml/`), and picks the lowest. | Sends ~99% to the fast backend: p95 −81% vs least connections with unequal backends. | Never explores, so it can't notice a backend that has recovered from being slow; ~34 µs per decision; no gain when backends are equal. |
-| **Bandit** (`bandit.py`) | Epsilon-greedy: with probability 0.1 a random backend (explore), otherwise the best mean reward (−latency) over each backend's last 50 requests (exploit). | Learns online, needs no training, adapts to change. | Exploration permanently sends ~3–4% to each slow backend, which lands in the p95 (68–70 ms). |
+| **Bandit** (`bandit.py`) | Epsilon-greedy: with probability 0.1 a random backend (explore), otherwise the best mean reward (−latency) over each backend's last 50 requests (exploit). | Learns online, needs no training, adapts to change. | Exploration permanently sends ~3–4% to each slow backend, which lands in the p95 (68–70 ms) and sets the p99 (165–168 ms). |
 
 Both ML strategies run inside a guard (`lb/strategies/guarded.py`): a missing model, an unknown feature (no heartbeat yet), an exception or a decision slower than 2 ms means least connections decides that request, and the fallback is logged and counted (0.84% of ML-routed requests in the final batch).
 
@@ -147,7 +159,7 @@ Both ML strategies run inside a guard (`lb/strategies/guarded.py`): a missing mo
 - 3NF PostgreSQL schema with foreign keys, CHECK constraints and soft deletes.
 - **Single writer thread with batched transactions**: savepoint salvage of a bad row, reconnect with retry, and buffering through a database outage.
 - **Composite indexes** proven with `EXPLAIN ANALYZE` on 1.2M rows (26–78× faster dashboard queries; a `LATERAL` "latest heartbeat before each request" join went from 10.8 s to 0.27 ms).
-- **Views** for the dashboard and the ML export, `percentile_cont` for p95, `date_bin` for time buckets, and a batched 7-day **retention job**.
+- **Views** for the dashboard and the ML export, one `percentile_cont` call for p50 / p95 / p99, `date_bin` for time buckets, and a batched 7-day **retention job**.
 
 **System design**
 - **Strategy pattern** for routing; **circuit breaker** (closed / open / half-open, state pattern); health-check hysteresis; **token-bucket rate limiting**; **rendezvous hashing** for sticky sessions.
@@ -163,7 +175,7 @@ Both ML strategies run inside a guard (`lb/strategies/guarded.py`): a missing mo
 ## Experiment methodology
 
 - **Scenarios** (`experiments/scenarios.py`): unequal servers (20 / 60 / 150 ms, 90 req/s), a sudden 10× slowdown of one of three equal backends halfway through, a traffic spike from 30 to 180 req/s, and a backend killed with SIGKILL halfway through. Every backend works on at most 8 requests at a time, so it can actually be overloaded.
-- **Each run** starts fresh backend processes and a fresh LB, so no stats, pooled connections or breaker state carry over; 30 s of load; then avg / p95 latency, error rate and throughput are computed in SQL from that run's request log.
+- **Each run** starts fresh backend processes and a fresh LB, so no stats, pooled connections or breaker state carry over; 30 s of load; then avg / p50 / p95 / p99 latency, error rate and throughput are computed in SQL from that run's request log.
 - **Open-loop load** (`experiments/load_generator.py`): Poisson arrivals sent on schedule whether or not earlier requests have answered. A closed-loop client ("send, wait, send") slows down exactly when the server does and hides the tail (coordinated omission).
 - **Fairness**: every strategy gets the same seeds, so it sees the identical sequence of arrivals; the final seeds (2000–2004) are not those the model's training data came from (42–44).
 - **Repeats and noise**: 5 runs per cell, reported as mean ± sample standard deviation with min–max; a winner is only named when it beats the others by more than that spread.
@@ -174,7 +186,8 @@ Both ML strategies run inside a guard (`lb/strategies/guarded.py`): a missing mo
 - **Round robin fails whenever a backend can't keep up with its third of the traffic.** After b slows to 300 ms it can finish ~25 req/s but keeps getting 30, so its queue grows for the rest of the run: p95 climbs from 40 ms to 2.3 s (the blue line above). In the spike, the slow backend's third (60 req/s) exceeds its ~51 req/s capacity: p95 reaches 3.8 s, and throughput drops 13% (113.8 vs 130 req/s) because the backlog takes extra seconds to drain. Every other strategy avoids both.
 - **Least connections already captures most of the gain.** Watching in-flight counts (Little's law: a slower backend holds its requests longer) is enough to cut the slowed backend's share to ~9% within a second. In the slowdown it is within noise of both ML strategies (43.6 ± 2.5 vs 41.9 ± 2.1 ms p95). Its blind spot is speed: with unequal backends it still sends the 150 ms server 14–15% of requests, more than 5%, so the p95 *is* a slow-server answer (~165 ms).
 - **ML wins where backends differ in speed.** The latency model sends 99% of traffic to the 20 ms backend, which can serve ~380 req/s, so even 180 req/s doesn't overload it. p95 falls from ~165 to 31–33 ms, about −80%. The bandit gets halfway (68–70 ms). Its ε = 0.1 exploration permanently sends 3–4% to *each* slower backend, and since those 7% of requests are slow, they land in the top 5% and set the p95. That is the cost of being able to notice change. In the slowdown timeline the same exploration shows as brief spikes: in any second where 5 or more of ~90 requests randomly land on b, that second's p95 is a 300 ms answer.
-- **ML did not help in two scenarios.** In the **slowdown** the gain over least connections (~2 ms p95) is smaller than the run-to-run spread; only the average improves (38.6 vs 49.3 ms), because ML cuts b to under 1% instead of ~9%. In the **crash**, with identical backends there is nothing to learn: ML's p95 is ~0.8 ms *worse* than round robin's, from its extra per-decision work and fallbacks. Errors (~0.2%) are the requests in flight on b when it died, or sent to it before the circuit breaker and health checks removed it. The bandit's lower 0.10% is chance: fewer of its requests happened to be in flight on b at that instant. It is not a designed advantage.
+- **p99 shows what p95 hides.** A strategy that sends a slow backend between 1% and 5% of all requests gets a fine p95 and a slow p99. After the slowdown, least connections still sends b ~9% of the later traffic and the bandit ~3%; over the whole run that is 4.4% and 2.0% of requests answered in over 250 ms, so both p99s land on b's ~300 ms (328 and 320 ms) while ML, at 0.4%, stays at 47 ms. With unequal backends the bandit's exploration does the same (p95 70 ms, p99 168 ms). The median (p50) barely separates the adaptive strategies at all (within ~3 ms everywhere): they differ in the tail, not the typical request. A big p50 → p99 gap (round robin: 38 ms → 3.1 s) means some requests queue on an overloaded backend.
+- **ML did not help in two scenarios at p95.** In the **slowdown** the gain over least connections (~2 ms p95) is smaller than the run-to-run spread; the average improves (38.6 vs 49.3 ms) and so does p99 (above), because ML cuts b to under 1% instead of ~9%. In the **crash**, with identical backends there is nothing to learn: ML's p95 is ~0.8 ms *worse* than round robin's, from its extra per-decision work and fallbacks. Errors (~0.2%) are the requests in flight on b when it died, or sent to it before the circuit breaker and health checks removed it. The bandit's lower 0.10% is chance: fewer of its requests happened to be in flight on b at that instant. It is not a designed advantage.
 - **Why ML wins is less impressive than it looks.** The model's weights amount to "1 × recent average latency + ~3 ms per request in flight", and for normal requests it predicts no better than simply using the recent average (MAE 6.1 vs 3.3 ms under 200 ms; [`ml_training.md`](experiments/results/ml_training.md)). The gain comes from routing on *latency* rather than on load, which a non-ML rule could probably do too. That baseline was not measured, so it is the first item under Future work. The CPU and memory features added nothing (22.5 vs 22.6 ms test MAE without them), because every backend here is the same sleeping Python process.
 - **Costs.** One ML routing decision takes ~34 µs vs ~4 µs for least connections ([`ml_inference.md`](experiments/results/ml_inference.md)). 510 of 60,390 ML-routed requests (0.84%) fell back to least connections. 284 of those were at the start of a run or on a killed backend (no fresh heartbeat or no latency history yet). The other 226 went over the 2 ms budget, because a thread was waiting for Python's GIL while other workers ran, not because the model was slow. The bandit fell back once in 20 runs.
 - **Caveats.** The model was trained on earlier runs of these same four scenarios (Phase 5 baselines, seeds 42–44), so this is its best case. It never explores, so a backend it stops using keeps its old average and a recovery would go unnoticed. Everything ran on one laptop with artificial delays.
