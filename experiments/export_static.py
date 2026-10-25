@@ -6,7 +6,8 @@
 
 Writes:
   docs/data/results.json   the batch's cells (mean, SD, min, max per scenario and
-                           strategy), headline, winner cards and methodology:
+                           strategy), headline and winner cards (for p50, p95 and
+                           p99), and methodology:
                            everything the page shows, so it needs no server;
   docs/assets/             results.js and dashboard.css copied from dashboard/static/,
                            so the static page draws exactly what the live dashboard does.
@@ -23,7 +24,7 @@ from datetime import datetime, timezone
 import psycopg
 
 from dashboard.app import batch_cells
-from dashboard.summary import headline, scenario_cards
+from dashboard.summary import headline, scenario_cards, summaries
 from experiments.plot_results import latest_batch
 from experiments.scenarios import SCENARIOS
 from lb.config import PROJECT_ROOT, database_url
@@ -43,6 +44,14 @@ FROM experiment_runs
 WHERE notes::jsonb ->> 'batch' = %s
 """
 
+# Requests per run, per scenario: how many samples each run's percentiles rest on.
+REQUESTS_PER_RUN_SQL = """
+SELECT scenario, round(avg((notes::jsonb ->> 'logged_rows')::int)) AS requests
+FROM experiment_runs
+WHERE notes::jsonb ->> 'batch' = %s
+GROUP BY scenario
+"""
+
 
 def export(batch: str | None = None, video_url: str | None = None) -> dict:
     with psycopg.connect(database_url()) as conn:
@@ -51,6 +60,9 @@ def export(batch: str | None = None, video_url: str | None = None) -> dict:
         batch = batch or latest_batch(conn, prefix="comparison-")
         runs, first_seed, last_seed, repeats, duration, requests, cross_checked = conn.execute(
             METHODOLOGY_SQL, (batch,)).fetchone()
+        # n is NULL for a scenario whose runs never finished (no logged_rows in their notes).
+        per_run = {scenario: int(n) for scenario, n in conn.execute(REQUESTS_PER_RUN_SQL, (batch,)).fetchall()
+                   if n is not None}
     if not runs:
         raise SystemExit(f"no runs found for batch {batch!r}")
     cells = batch_cells(batch)
@@ -60,9 +72,10 @@ def export(batch: str | None = None, video_url: str | None = None) -> dict:
         "cells": cells,
         "headline": headline(cells),
         "cards": scenario_cards(cells),
+        "by_percentile": summaries(cells),
         "methodology": {
             "runs": runs, "repeats": repeats, "seeds": [first_seed, last_seed], "duration_s": duration,
-            "requests": requests, "cross_checked": cross_checked,
+            "requests": requests, "cross_checked": cross_checked, "requests_per_run": per_run,
             "strategies": len({c["strategy"] for c in cells}), "scenarios": len({c["scenario"] for c in cells}),
             "scenario_descriptions": {name: s.description for name, s in SCENARIOS.items()
                                       if any(c["scenario"] == name for c in cells)},

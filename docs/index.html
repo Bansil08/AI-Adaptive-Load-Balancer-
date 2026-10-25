@@ -50,12 +50,15 @@
 <main>
   <section>
     <h2>Results by scenario</h2>
-    <p class="muted">p95 latency per strategy, mean of the runs; hover a bar for ± standard deviation and min–max.</p>
+    <p class="muted">Latency per strategy, mean of the runs; hover a bar for ± standard deviation and min–max.</p>
+    <p class="muted" id="percentile-note"></p>
+    <div class="percentile-row"><span class="control-label">Charts and headline show</span>
+      <div id="results-percentile" aria-label="Latency percentile for the charts"></div></div>
     <div id="experiment-charts" class="grid4"></div>
     <div class="table-wrap"><table id="experiments">
       <thead><tr>
-        <th>Scenario</th><th>Strategy</th><th class="num">Runs</th><th class="num">p95 latency (ms)</th>
-        <th class="num">Avg latency (ms)</th><th class="num">Error rate</th><th class="num">Throughput (req/s)</th>
+        <th>Scenario</th><th>Strategy</th><th class="num">Runs</th><th class="num">p50 (ms)</th>
+        <th class="num">p95 (ms)</th><th class="num">p99 (ms)</th><th class="num">Avg latency (ms)</th><th class="num">Error rate</th><th class="num">Throughput (req/s)</th>
       </tr></thead>
       <tbody></tbody>
     </table></div>
@@ -114,7 +117,10 @@ flowchart TD
       <li>Every strategy gets the same random seeds, so it sees the identical sequence of arrivals. The seeds differ
         from those of the runs the ML model was trained on.</li>
       <li>Each cell is reported as the mean ± standard deviation over the runs, with the min–max range. A "winner" is
-        only named when its p95 beats the others by more than that spread; otherwise the card says it's a tie.</li>
+        only named when its latency (at the chosen percentile) beats the others by more than that spread;
+        otherwise the card says it's a tie.</li>
+      <li>p50, p95 and p99 are computed the same way everywhere: Postgres <code>percentile_cont</code> (linear
+        interpolation) over a run's successful requests, all three from one sort.</li>
       <li>Retries were off during the experiments, so errors show what the routing did. Each run's request log was
         cross-checked against the load generator's own count.</li>
       <li>Limitations: one laptop, synthetic backends with artificial delays, and a single (not replicated) load
@@ -146,6 +152,17 @@ flowchart TD
       applyChartDefaults();
       drawResults(data);
       const m = data.methodology;
+      // How many samples p99 rests on, from the measured request counts (not typed in).
+      const perRun = Object.entries(m.requests_per_run || {}).sort((a, b) => a[1] - b[1]);
+      if (perRun.length) {
+        const typical = perRun[0][1], [busiest, most] = perRun[perRun.length - 1];
+        const rate = Math.round(typical / m.duration_s);
+        $("#percentile-note").textContent = "Percentiles are computed per run from all completed (non-5xx) " +
+          `requests; p99 rests on ~1% of samples (~${Math.round(typical / 100)} per ${m.duration_s} s run at ` +
+          `~${rate} req/s` +
+          (most > typical * 1.2 ? `, ~${Math.round(most / 100)} in ${busiest.replaceAll("_", " ")}` : "") +
+          "), so it is noisier than p95.";
+      }
       $("#facts").append(
         fact(String(m.runs), "runs"),
         fact(`${m.strategies} × ${m.scenarios}`, "strategies × scenarios"),
