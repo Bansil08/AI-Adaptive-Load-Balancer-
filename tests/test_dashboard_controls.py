@@ -76,6 +76,22 @@ def test_headline_and_cards_follow_the_chosen_percentile():
     assert summaries(cells)["p50"] == {"headline": None, "cards": []}
 
 
+def test_headline_without_round_robin_in_the_batch():
+    # Regression: a batch run with --strategies but no round robin crashed on its missing p95.
+    cells = [cell("unequal_servers", "least_connections", 166), cell("unequal_servers", "ml_latency", 31)]
+    assert headline(cells)["text"] == "ML latency: p95 31 ms vs 166 ms for least connections (−81%) on unequal servers"
+
+
+def test_no_winner_from_single_runs():
+    # One run per cell has SD 0, so 36.8 vs 36.9 ms would otherwise be called a "clear" win.
+    cells = [cell("sudden_slowdown", "round_robin", 36.8, 0.0), cell("sudden_slowdown", "ml_latency", 36.9, 0.0)]
+    for c in cells:
+        c["runs"] = 1
+    [card] = scenario_cards(cells)
+    assert not card["clear_winner"] and card["winners"] == ["round_robin", "ml_latency"]
+    assert headline(cells) is None
+
+
 def test_headline_formats_seconds():
     cells = [cell("traffic_spike", "round_robin", 3840), cell("traffic_spike", "ml_latency", 33)]
     assert "3.84 s for round robin" in headline(cells)["text"]

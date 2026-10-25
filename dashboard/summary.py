@@ -10,7 +10,8 @@ percentile toggle changes the cards and the headline too (summaries()).
 A winner is only declared when it is clear: the best strategy's percentile must beat
 every other strategy by more than the run-to-run noise. Two cells count as
 tied when their mean ± standard deviation intervals overlap (with 5 runs that
-is a deliberately cautious rule: it never calls noise a win). Calling the
+is a deliberately cautious rule: it never calls noise a win), and a cell of a
+single run, which can't measure noise, never wins. Calling the
 crash scenario's 38.8 vs 38.9 ms a "win" would be the kind of overclaim this
 project avoids.
 """
@@ -68,8 +69,12 @@ def scenario_cards(cells: list[dict], percentile: str = "p95") -> list[dict]:
             continue
         best = group[0]
         best_high = _interval(best, key)[1]
-        # Everyone whose mean ± SD overlaps the best's is not clearly worse.
-        tied = [c for c in group if _interval(c, key)[0] <= best_high]
+        # Everyone whose mean ± SD overlaps the best's is not clearly worse. A cell
+        # of one run has SD 0, which says nothing about noise: then nobody wins.
+        if all(c.get("runs", 0) >= 2 for c in group):
+            tied = [c for c in group if _interval(c, key)[0] <= best_high]
+        else:
+            tied = group
         rr = next((c for c in group if c["strategy"] == "round_robin"), None)
         value = best[key]["mean"]
         rr_value = rr[key]["mean"] if rr else None
@@ -111,11 +116,15 @@ def headline(cells: list[dict], percentile: str = "p95") -> dict | None:
                     "change_vs_baseline": gain}
     if best is None:
         return None
-    text = (f"{LABELS.get(best['strategy'], best['strategy'])}: {percentile} {_ms(best['value_ms'])} vs "
-            f"{_ms(best['round_robin_ms'])} for round robin ({best['change_vs_round_robin']:+.0%})")
+    # A batch run without round robin (--strategies) has nothing to compare with there.
+    against = []
+    if best["round_robin_ms"] is not None:
+        against.append(f"{_ms(best['round_robin_ms'])} for round robin ({best['change_vs_round_robin']:+.0%})")
     if best["baseline"] != "round_robin":
-        text += (f" and {_ms(best['baseline_ms'])} for {LABELS[best['baseline']].lower()} "
-                 f"({best['change_vs_baseline']:+.0%})")
+        against.append(f"{_ms(best['baseline_ms'])} for {LABELS[best['baseline']].lower()} "
+                       f"({best['change_vs_baseline']:+.0%})")
+    text = (f"{LABELS.get(best['strategy'], best['strategy'])}: {percentile} {_ms(best['value_ms'])} vs "
+            + " and ".join(against))
     best["text"] = text.replace("-", "−") + f" on {best['label']}"
     return best
 
